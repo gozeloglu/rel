@@ -45,6 +45,8 @@ type reportGroup struct {
 	results []detectResult
 	// detailed groups get an aligned table, the rest only a wrapped name list.
 	detailed bool
+	// countOnly groups are pure noise once listed, so only the header is shown.
+	countOnly bool
 }
 
 // buildReport arranges the screening results into display groups, ordered from
@@ -61,7 +63,7 @@ func buildReport(results []detectResult, profile *config.Profile) []reportGroup 
 		{status: statusStaleRelease, icon: "⏳", label: "OUT OF SYNC · RELEASED BEFORE WINDOW", style: staleStyle, detailed: true},
 		{status: statusNoRelease, icon: "⚠", label: "OUT OF SYNC · NEVER RELEASED", style: staleStyle, detailed: true},
 		{status: statusFailed, icon: "✖", label: "COULD NOT BE CHECKED", style: badStyle, detailed: true},
-		{status: statusNotAhead, icon: "✓", label: "ALREADY IN SYNC", style: dimStyle},
+		{status: statusNotAhead, icon: "✓", label: "ALREADY IN SYNC", style: dimStyle, countOnly: true},
 		{status: statusNoBranch, icon: "−",
 			label: fmt.Sprintf("NOT APPLICABLE · no '%s' or '%s' branch", profile.BaseBranch, profile.DevBranch),
 			style: dimStyle},
@@ -125,6 +127,9 @@ func renderReport(groups []reportGroup, profile *config.Profile, total int, wind
 
 		if g.detailed {
 			sb.WriteString(renderDetailRows(g))
+			continue
+		}
+		if g.countOnly {
 			continue
 		}
 		sb.WriteString(wrapNames(namesOf(g.results), "     ", reportWidth()))

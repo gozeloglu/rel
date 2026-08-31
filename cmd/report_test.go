@@ -214,7 +214,6 @@ func TestRenderReportShowsDetailsAndNames(t *testing.T) {
 		"SYNC PR ALREADY OPEN · 1",
 		"https://github.com/acme/payment-beta/pull/7",
 		"ALREADY IN SYNC · 1",
-		"payment-gamma",
 		"NOT APPLICABLE",
 		"payment-delta",
 		"scanned 4 repositories",
@@ -222,6 +221,10 @@ func TestRenderReportShowsDetailsAndNames(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("report is missing %q:\n%s", want, out)
 		}
+	}
+
+	if strings.Contains(out, "payment-gamma") {
+		t.Errorf("in-sync repositories must be summarised as a count only:\n%s", out)
 	}
 
 	if strings.Contains(out, "COULD NOT BE CHECKED") {
