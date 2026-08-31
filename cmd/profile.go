@@ -11,8 +11,9 @@ import (
 )
 
 var profileCmd = &cobra.Command{
-	Use:   "profile",
-	Short: "Switch between and manage profiles",
+	Use:               "profile",
+	Short:             "Switch between and manage profiles",
+	ValidArgsFunction: cobra.NoFileCompletions,
 	Long: "Opens a picker to choose the active profile.\n" +
 		"Use 'n' to create a new profile, 'e' to edit and 'd' to delete the highlighted one.",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -130,8 +131,10 @@ func deleteProfile(cfg *config.Config, name string) error {
 }
 
 var profileListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List saved profiles",
+	Use:               "list",
+	Short:             "List saved profiles",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
@@ -155,9 +158,10 @@ var profileListCmd = &cobra.Command{
 }
 
 var profileUseCmd = &cobra.Command{
-	Use:   "use <name>",
-	Short: "Set the active profile",
-	Args:  cobra.ExactArgs(1),
+	Use:               "use <name>",
+	Short:             "Set the active profile",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeProfileNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
@@ -177,9 +181,10 @@ var profileUseCmd = &cobra.Command{
 }
 
 var profileDeleteCmd = &cobra.Command{
-	Use:   "delete <name>",
-	Short: "Delete a profile",
-	Args:  cobra.ExactArgs(1),
+	Use:               "delete <name>",
+	Short:             "Delete a profile",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeProfileNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {

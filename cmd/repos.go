@@ -19,6 +19,7 @@ var profileFlag string
 func addProfileFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&profileFlag, "profile", "",
 		"Profile to use for this run (defaults to the active profile)")
+	_ = cmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
 }
 
 // repoCacheKey scopes the repository cache to a profile. The fingerprint makes

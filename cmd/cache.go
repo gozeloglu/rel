@@ -12,13 +12,16 @@ import (
 var cacheAll bool
 
 var cacheCmd = &cobra.Command{
-	Use:   "cache",
-	Short: "Manage the cached repository lists",
+	Use:               "cache",
+	Short:             "Manage the cached repository lists",
+	ValidArgsFunction: cobra.NoFileCompletions,
 }
 
 var cacheClearCmd = &cobra.Command{
-	Use:   "clear",
-	Short: "Clear the cached repository list of the active profile",
+	Use:               "clear",
+	Short:             "Clear the cached repository list of the active profile",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if cacheAll {
 			n, err := cache.ClearAll()
@@ -42,8 +45,10 @@ var cacheClearCmd = &cobra.Command{
 }
 
 var cacheStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show the cached repository list status",
+	Use:               "status",
+	Short:             "Show the cached repository list status",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := activeProfile()
 		if err != nil {

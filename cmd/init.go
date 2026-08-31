@@ -12,8 +12,10 @@ import (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Create a new profile (organization/user, team, branches, filters)",
+	Use:               "init",
+	Short:             "Create a new profile (organization/user, team, branches, filters)",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {

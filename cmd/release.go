@@ -16,8 +16,10 @@ import (
 var refreshReleaseRepos bool
 
 var releaseCmd = &cobra.Command{
-	Use:   "release",
-	Short: "Start the release process",
+	Use:               "release",
+	Short:             "Start the release process",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		client, profile, err := newClientForRun(cmd)

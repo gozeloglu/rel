@@ -13,8 +13,10 @@ import (
 var refreshSyncRepos bool
 
 var syncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Open pull requests that merge the release branch back into the development branch",
+	Use:               "sync",
+	Short:             "Open pull requests that merge the release branch back into the development branch",
+	Args:              cobra.NoArgs,
+	ValidArgsFunction: cobra.NoFileCompletions,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		client, profile, err := newClientForRun(cmd)
