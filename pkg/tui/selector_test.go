@@ -275,3 +275,48 @@ func TestSelectorWithoutNotesRendersPlainRows(t *testing.T) {
 		}
 	}
 }
+
+// TestSelectReposWithPresetPreTicksTheGivenRepos exercises the model
+// SelectReposWithPreset builds, without running a terminal program.
+func TestSelectReposWithPresetPreTicksTheGivenRepos(t *testing.T) {
+	repos := []string{"alpha", "beta", "gamma"}
+
+	m := newPresetSelectorModel("Select Repositories", repos,
+		[]string{"alpha", "gamma", "already-gone"})
+
+	got := m.result()
+	want := []string{"alpha", "gamma"}
+
+	if len(got) != len(want) {
+		t.Fatalf("result = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("result = %v, want %v", got, want)
+		}
+	}
+
+	if m.selected["beta"] {
+		t.Error("a repository outside the preset must stay unticked")
+	}
+
+	// A preset entry that vanished from the list must not inflate the counter.
+	if n := m.selectedCount(); n != 2 {
+		t.Errorf("selectedCount = %d, want 2", n)
+	}
+
+	view := m.View()
+	for _, want := range []string{"[✓] alpha", "[ ] beta", "[✓] gamma", "2 selected"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view is missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestSelectReposWithPresetEmptyPresetSelectsNothing(t *testing.T) {
+	m := newPresetSelectorModel("Select Repositories", []string{"alpha", "beta"}, nil)
+
+	if n := m.selectedCount(); n != 0 {
+		t.Errorf("selectedCount = %d, want 0", n)
+	}
+}

@@ -375,6 +375,31 @@ func SelectRepos(repos []string) ([]string, error) {
 	return runSelector(newSelectorModel("Select Repositories", repos))
 }
 
+// SelectReposWithPreset shows the same screen with the given repositories
+// already ticked, so a repeated pass keeps the previous choice. Preset entries
+// that are no longer in the list are ignored.
+func SelectReposWithPreset(repos []string, preset []string) ([]string, error) {
+	return runSelector(newPresetSelectorModel("Select Repositories", repos, preset))
+}
+
+// newPresetSelectorModel builds a selector with preset ticked, ignoring preset
+// entries that are no longer in the list so the counter cannot drift.
+func newPresetSelectorModel(title string, repos []string, preset []string) *selectorModel {
+	m := newSelectorModel(title, repos)
+
+	known := make(map[string]bool, len(repos))
+	for _, r := range repos {
+		known[r] = true
+	}
+	for _, r := range preset {
+		if known[r] {
+			m.selected[r] = true
+		}
+	}
+
+	return m
+}
+
 // RepoNote pairs a repository with a short annotation rendered next to its
 // name, such as the release that triggered it.
 type RepoNote struct {

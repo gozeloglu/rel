@@ -262,8 +262,10 @@ func wrapNames(names []string, indent string, width int) string {
 	return sb.String()
 }
 
+// pad right-aligns a column by display width. Counting runes rather than bytes
+// keeps non-ASCII cells such as the em dash placeholder aligned.
 func pad(s string, width int) string {
-	if n := width - len(s); n > 0 {
+	if n := width - len([]rune(s)); n > 0 {
 		return s + strings.Repeat(" ", n)
 	}
 	return s

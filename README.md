@@ -102,6 +102,30 @@ rel release
 
 Select the repositories you want to release, confirm or edit the version numbers, and the tool handles branching and PR creation.
 
+Nothing is created until you have seen the whole plan:
+
+```
+Release plan · acme/payments · → master
+──────────────────────────────────────────────────────────────────────────
+
+   payment-alpha         v1.2.0 → v1.3.0   minor
+   payment-beta          v3.0.1 → v4.0.0   major
+   payment-core-service  v2.4.0 → v2.4.1   patch
+   payment-gamma         —      → v1.0.0   first release
+   payment-delta         v2.4.0 → v2.3.0   ⚠ not newer than v2.4.0
+
+   ⚠  1 repository skipped · latest tag could not be read
+      payment-epsilon
+
+   each repository gets a release/<version> branch and a pull request into master
+
+Create 5 release pull requests? (y/N)
+```
+
+The bump label next to each row is informational and never blocks a release — it exists so a mistyped version stands out while it is still cheap to fix. The confirmation defaults to yes, unless a row is flagged with `⚠`, in which case it defaults to no.
+
+Answering no takes you back to the repository list instead of quitting, and going round again is cheap: your previous selection comes back already ticked, each version prompt offers what you typed last time, and tags are not fetched a second time.
+
 Key bindings in the repository list:
 
 | Key | Action |
