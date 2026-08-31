@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/Getir/rel/cmd"
+	"github.com/gozeloglu/rel/cmd"
 )
 
 func main() {

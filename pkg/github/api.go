@@ -9,18 +9,21 @@ import (
 )
 
 func (c *Client) FetchRepos(ctx context.Context) ([]*github.Repository, error) {
-	opts := &github.RepositoryListByOrgOptions{
-		Type:        "all",
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
+	fmt.Println("Fetching repositories for team 'payment-integrations'...")
+	opts := &github.ListOptions{PerPage: 100}
 
 	var allRepos []*github.Repository
+	teamFetchSuccess := false
+
 	for {
-		repos, resp, err := c.GH.Repositories.ListByOrg(ctx, "Getir", opts)
+		repos, resp, err := c.GH.Teams.ListTeamReposBySlug(ctx, "Getir", "payment-integrations", opts)
 		if err != nil {
-			return nil, err
+			// Fallback to org-wide fetch
+			fmt.Printf("Team fetch failed (%v), falling back to org repos with 'payment-' prefix...\n", err)
+			break
 		}
-		
+		teamFetchSuccess = true
+
 		for _, repo := range repos {
 			if !strings.HasSuffix(repo.GetName(), "-manifests") {
 				allRepos = append(allRepos, repo)
@@ -31,6 +34,33 @@ func (c *Client) FetchRepos(ctx context.Context) ([]*github.Repository, error) {
 			break
 		}
 		opts.Page = resp.NextPage
+	}
+
+	if teamFetchSuccess {
+		return allRepos, nil
+	}
+
+	orgOpts := &github.RepositoryListByOrgOptions{
+		Type:        "all",
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	for {
+		repos, resp, err := c.GH.Repositories.ListByOrg(ctx, "Getir", orgOpts)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, repo := range repos {
+			if strings.HasPrefix(repo.GetName(), "payment-") && !strings.HasSuffix(repo.GetName(), "-manifests") {
+				allRepos = append(allRepos, repo)
+			}
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		orgOpts.Page = resp.NextPage
 	}
 
 	return allRepos, nil

@@ -1,4 +1,4 @@
-module github.com/Getir/rel
+module github.com/gozeloglu/rel
 
 go 1.26.3
 

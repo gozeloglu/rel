@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Getir/rel/pkg/github"
-	"github.com/Getir/rel/pkg/tui"
+	"github.com/gozeloglu/rel/pkg/github"
+	"github.com/gozeloglu/rel/pkg/tui"
 	"github.com/spf13/cobra"
 )
 

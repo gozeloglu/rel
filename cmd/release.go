@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/Getir/rel/pkg/github"
-	"github.com/Getir/rel/pkg/tui"
-	"github.com/Getir/rel/pkg/utils"
+	"github.com/gozeloglu/rel/pkg/github"
+	"github.com/gozeloglu/rel/pkg/tui"
+	"github.com/gozeloglu/rel/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -51,6 +51,11 @@ var releaseCmd = &cobra.Command{
 				fmt.Printf("❌ Failed to get latest tag for %s: %v\n", repo, err)
 				continue
 			}
+			if tag != "" {
+				fmt.Printf("✅ Found latest tag: %s\n", tag)
+			} else {
+				fmt.Println("ℹ️ No previous tag found, defaulting to 1.0.0")
+			}
 
 			nextDefault := utils.BumpMinor(tag)
 			version, err := tui.InputVersion(repo, nextDefault)
@@ -58,6 +63,7 @@ var releaseCmd = &cobra.Command{
 				return err
 			}
 
+			fmt.Println("⏳ Checking if master is synced with dev...")
 			isAhead, err := client.CheckSyncStatus(ctx, repo)
 			if err != nil {
 				fmt.Printf("❌ Failed to check sync status for %s: %v\n", repo, err)
