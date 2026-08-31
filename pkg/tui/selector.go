@@ -19,23 +19,6 @@ const (
 	chromeRows = 7
 )
 
-var (
-	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-	counterStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	filterLabel    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
-	filterText     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231"))
-	filterHint     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	cursorStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-	checkedStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
-	uncheckedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	activeItem     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231"))
-	normalItem     = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	matchStyle     = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(lipgloss.Color("214"))
-	helpStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	warnStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	cursorBlock    = lipgloss.NewStyle().Reverse(true)
-)
-
 type selectorModel struct {
 	title    string
 	all      []string
@@ -217,10 +200,8 @@ func (m *selectorModel) updateFiltering(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applyFilter()
 		return m, nil
 	case tea.KeyRunes, tea.KeySpace:
+		// bubbletea reports space as KeySpace but still fills Runes.
 		m.filter += string(msg.Runes)
-		if msg.Type == tea.KeySpace {
-			m.filter += " "
-		}
 		m.applyFilter()
 		return m, nil
 	}

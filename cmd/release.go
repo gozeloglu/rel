@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gozeloglu/rel/pkg/github"
 	"github.com/gozeloglu/rel/pkg/tui"
 	"github.com/gozeloglu/rel/pkg/utils"
 	"github.com/spf13/cobra"
@@ -21,13 +19,13 @@ var releaseCmd = &cobra.Command{
 	Use:   "release",
 	Short: "Start the release process",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		client, err := github.NewClient()
+		ctx := cmd.Context()
+		client, profile, err := newClientForRun(cmd)
 		if err != nil {
 			return err
 		}
 
-		repoNames, err := fetchRepoNames(ctx, client, refreshReleaseRepos)
+		repoNames, err := fetchRepoNames(ctx, client, profile, refreshReleaseRepos)
 		if err != nil {
 			return err
 		}
@@ -116,7 +114,8 @@ var releaseCmd = &cobra.Command{
 				}
 
 				if isAhead {
-					fmt.Printf("❌ [%s] Master is ahead of Dev. Sync missing!\n", r)
+					fmt.Printf("❌ [%s] '%s' is ahead of '%s'. Sync missing!\n",
+						r, profile.BaseBranch, profile.DevBranch)
 					atomic.AddInt32(&errCount, 1)
 					return
 				}
@@ -167,5 +166,6 @@ var releaseCmd = &cobra.Command{
 
 func init() {
 	releaseCmd.Flags().BoolVar(&refreshReleaseRepos, "refresh", false, "Bypass the repository cache and re-fetch from GitHub")
+	addProfileFlag(releaseCmd)
 	rootCmd.AddCommand(releaseCmd)
 }

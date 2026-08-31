@@ -3,30 +3,48 @@ package github
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/google/go-github/v60/github"
+	"github.com/gozeloglu/rel/pkg/config"
 )
 
-func (c *Client) FetchRepos(ctx context.Context) ([]*github.Repository, error) {
-	fmt.Println("Fetching repositories for team 'payment-integrations'...")
-	opts := &github.ListOptions{PerPage: 100}
+// FetchRepos lists the repositories the profile targets, applying its include
+// and exclude filters. When a team is configured it is used first; if the team
+// cannot be read (missing scope, wrong slug) it falls back to listing the whole
+// owner so the tool stays usable.
+func (c *Client) FetchRepos(ctx context.Context) ([]string, error) {
+	p := c.Profile
+	if p == nil {
+		return nil, fmt.Errorf("no profile configured")
+	}
 
-	var allRepos []*github.Repository
-	teamFetchSuccess := false
+	if p.Team != "" {
+		repos, err := c.fetchTeamRepos(ctx, p)
+		if err == nil {
+			return repos, nil
+		}
+		fmt.Printf("⚠️  Team '%s' fetch failed (%v), falling back to all %s repositories...\n",
+			p.Team, err, p.Owner)
+	}
+
+	return c.fetchOwnerRepos(ctx, p)
+}
+
+func (c *Client) fetchTeamRepos(ctx context.Context, p *config.Profile) ([]string, error) {
+	fmt.Printf("Fetching repositories for team '%s/%s'...\n", p.Owner, p.Team)
+
+	opts := &github.ListOptions{PerPage: 100}
+	var names []string
 
 	for {
-		repos, resp, err := c.GH.Teams.ListTeamReposBySlug(ctx, "Getir", "payment-integrations", opts)
+		repos, resp, err := c.GH.Teams.ListTeamReposBySlug(ctx, p.Owner, p.Team, opts)
 		if err != nil {
-			// Fallback to org-wide fetch
-			fmt.Printf("Team fetch failed (%v), falling back to org repos with 'payment-' prefix...\n", err)
-			break
+			return nil, err
 		}
-		teamFetchSuccess = true
 
 		for _, repo := range repos {
-			if !strings.HasSuffix(repo.GetName(), "-manifests") {
-				allRepos = append(allRepos, repo)
+			if p.Matches(repo.GetName()) {
+				names = append(names, repo.GetName())
 			}
 		}
 
@@ -36,39 +54,52 @@ func (c *Client) FetchRepos(ctx context.Context) ([]*github.Repository, error) {
 		opts.Page = resp.NextPage
 	}
 
-	if teamFetchSuccess {
-		return allRepos, nil
-	}
+	return names, nil
+}
 
-	orgOpts := &github.RepositoryListByOrgOptions{
-		Type:        "all",
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
+func (c *Client) fetchOwnerRepos(ctx context.Context, p *config.Profile) ([]string, error) {
+	fmt.Printf("Fetching repositories for %s '%s'...\n", p.OwnerType, p.Owner)
+
+	var names []string
+	listOpts := github.ListOptions{PerPage: 100}
 
 	for {
-		repos, resp, err := c.GH.Repositories.ListByOrg(ctx, "Getir", orgOpts)
+		var (
+			repos []*github.Repository
+			resp  *github.Response
+			err   error
+		)
+
+		if p.OwnerType == config.OwnerUser {
+			repos, resp, err = c.GH.Repositories.ListByUser(ctx, p.Owner,
+				&github.RepositoryListByUserOptions{Type: "owner", ListOptions: listOpts})
+		} else {
+			repos, resp, err = c.GH.Repositories.ListByOrg(ctx, p.Owner,
+				&github.RepositoryListByOrgOptions{Type: "all", ListOptions: listOpts})
+		}
 		if err != nil {
 			return nil, err
 		}
 
 		for _, repo := range repos {
-			if strings.HasPrefix(repo.GetName(), "payment-") && !strings.HasSuffix(repo.GetName(), "-manifests") {
-				allRepos = append(allRepos, repo)
+			if p.Matches(repo.GetName()) {
+				names = append(names, repo.GetName())
 			}
 		}
 
 		if resp.NextPage == 0 {
 			break
 		}
-		orgOpts.Page = resp.NextPage
+		listOpts.Page = resp.NextPage
 	}
 
-	return allRepos, nil
+	return names, nil
 }
 
+// GetLatestReleaseTag returns the most recent tag of a repository.
 func (c *Client) GetLatestReleaseTag(ctx context.Context, repo string) (string, error) {
 	opts := &github.ListOptions{PerPage: 1}
-	tags, _, err := c.GH.Repositories.ListTags(ctx, "Getir", repo, opts)
+	tags, _, err := c.GH.Repositories.ListTags(ctx, c.owner(), repo, opts)
 	if err != nil {
 		return "", err
 	}
@@ -78,66 +109,76 @@ func (c *Client) GetLatestReleaseTag(ctx context.Context, repo string) (string, 
 	return tags[0].GetName(), nil
 }
 
+// CheckSyncStatus reports whether the base branch is ahead of the dev branch.
 func (c *Client) CheckSyncStatus(ctx context.Context, repo string) (bool, error) {
-	comp, _, err := c.GH.Repositories.CompareCommits(ctx, "Getir", repo, "dev", "master", nil)
+	if c.Profile.SingleBranch() {
+		return false, nil
+	}
+
+	comp, _, err := c.GH.Repositories.CompareCommits(ctx, c.owner(), repo,
+		c.Profile.DevBranch, c.Profile.BaseBranch, nil)
 	if err != nil {
 		return false, err
 	}
-	// If ahead_by > 0, master is ahead of dev.
+	// If ahead_by > 0, the base branch is ahead of the dev branch.
 	return comp.GetAheadBy() > 0, nil
 }
 
+// CreateReleaseBranch cuts a release branch from the dev branch.
 func (c *Client) CreateReleaseBranch(ctx context.Context, repo, branchName string) error {
-	// Get dev branch SHA
-	devBranch, _, err := c.GH.Repositories.GetBranch(ctx, "Getir", repo, "dev", 1)
+	source := c.Profile.DevBranch
+
+	devBranch, _, err := c.GH.Repositories.GetBranch(ctx, c.owner(), repo, source, 1)
 	if err != nil {
-		return fmt.Errorf("failed to get dev branch: %w", err)
+		return fmt.Errorf("failed to get %s branch: %w", source, err)
 	}
-	
+
 	sha := devBranch.GetCommit().GetSHA()
 	refName := "refs/heads/" + branchName
-	
+
 	ref := &github.Reference{
 		Ref: &refName,
 		Object: &github.GitObject{
 			SHA: &sha,
 		},
 	}
-	
-	_, _, err = c.GH.Git.CreateRef(ctx, "Getir", repo, ref)
+
+	_, _, err = c.GH.Git.CreateRef(ctx, c.owner(), repo, ref)
 	return err
 }
 
+// CreateReleasePR opens the release branch against the base branch.
 func (c *Client) CreateReleasePR(ctx context.Context, repo, branchName, version string) (string, error) {
 	title := fmt.Sprintf("Release %s", version) // e.g. v1.21.0
 	head := branchName
-	base := "master"
-	
+	base := c.Profile.BaseBranch
+
 	newPR := &github.NewPullRequest{
 		Title: &title,
 		Head:  &head,
 		Base:  &base,
 	}
-	
-	pr, _, err := c.GH.PullRequests.Create(ctx, "Getir", repo, newPR)
+
+	pr, _, err := c.GH.PullRequests.Create(ctx, c.owner(), repo, newPR)
 	if err != nil {
 		return "", err
 	}
 	return pr.GetHTMLURL(), nil
 }
 
+// CreateSyncPR opens a PR that merges the base branch back into the dev branch.
 func (c *Client) CreateSyncPR(ctx context.Context, repo string) (string, error) {
-	title := "chore: master to dev sync"
-	head := "master"
-	base := "dev"
-	
+	head := c.Profile.BaseBranch
+	base := c.Profile.DevBranch
+	title := fmt.Sprintf("chore: %s to %s sync", head, base)
+
 	newPR := &github.NewPullRequest{
 		Title: &title,
 		Head:  &head,
 		Base:  &base,
 	}
-	
-	pr, _, err := c.GH.PullRequests.Create(ctx, "Getir", repo, newPR)
+
+	pr, _, err := c.GH.PullRequests.Create(ctx, c.owner(), repo, newPR)
 	if err != nil {
 		return "", err
 	}

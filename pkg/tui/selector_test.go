@@ -177,3 +177,22 @@ func TestScrollingKeepsCursorVisible(t *testing.T) {
 		t.Fatal("last repo not rendered after scrolling to the end")
 	}
 }
+
+// bubbletea delivers space as KeySpace with Runes already set; appending it
+// twice would make multi-word filters impossible.
+func TestSpaceIsNotDuplicatedInFilter(t *testing.T) {
+	m := newSelectorModel("t", []string{"my repo one", "my repo two", "other"})
+	m = feed(t, m,
+		tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")},
+		tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("my")},
+		tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")},
+		tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("repo")},
+	)
+
+	if m.filter != "my repo" {
+		t.Fatalf("filter = %q, want %q", m.filter, "my repo")
+	}
+	if len(m.visible) != 2 {
+		t.Fatalf("expected 2 matches, got %v", m.visible)
+	}
+}

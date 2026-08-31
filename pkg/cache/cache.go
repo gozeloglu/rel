@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -100,4 +101,43 @@ func Clear(name string) error {
 		return err
 	}
 	return nil
+}
+
+// Names lists the entries currently stored in the cache directory.
+func Names() ([]string, error) {
+	p, err := path("x")
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(filepath.Dir(p))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(e.Name(), ".json"))
+	}
+	return names, nil
+}
+
+// ClearAll removes every cache entry and reports how many were deleted.
+func ClearAll() (int, error) {
+	names, err := Names()
+	if err != nil {
+		return 0, err
+	}
+	for _, n := range names {
+		if err := Clear(n); err != nil {
+			return 0, err
+		}
+	}
+	return len(names), nil
 }

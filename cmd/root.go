@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -9,12 +10,16 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "rel",
-	Short: "rel is a TUI tool to automate Getir GitHub release processes",
-	Long:  `A fast and beautiful TUI tool to automate periodic GitHub release processes for the Getir organization.`,
+	Short: "rel is a TUI tool to automate GitHub release processes",
+	Long: "A fast and beautiful TUI tool to automate periodic GitHub release processes\n" +
+		"for any organization, team or personal account.\n\n" +
+		"Run 'rel init' once to set up a profile, then use 'rel release' and 'rel sync'.",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := rootCmd.ExecuteContext(context.Background()); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}

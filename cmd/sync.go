@@ -1,13 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 
-	"github.com/gozeloglu/rel/pkg/github"
 	"github.com/gozeloglu/rel/pkg/tui"
 	"github.com/spf13/cobra"
 )
@@ -16,15 +14,21 @@ var refreshSyncRepos bool
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Sync master to dev",
+	Short: "Open pull requests that merge the release branch back into the development branch",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		client, err := github.NewClient()
+		ctx := cmd.Context()
+		client, profile, err := newClientForRun(cmd)
 		if err != nil {
 			return err
 		}
 
-		repoNames, err := fetchRepoNames(ctx, client, refreshSyncRepos)
+		if profile.SingleBranch() {
+			fmt.Printf("Profile '%s' uses a single branch ('%s'), so there is nothing to sync.\n",
+				profile.Name, profile.BaseBranch)
+			return nil
+		}
+
+		repoNames, err := fetchRepoNames(ctx, client, profile, refreshSyncRepos)
 		if err != nil {
 			return err
 		}
@@ -62,7 +66,8 @@ var syncCmd = &cobra.Command{
 				}
 
 				if !isAhead {
-					fmt.Printf("✅ [%s] Master is not ahead of Dev. No sync needed.\n", r)
+					fmt.Printf("✅ [%s] '%s' is not ahead of '%s'. No sync needed.\n",
+						r, profile.BaseBranch, profile.DevBranch)
 					return
 				}
 
@@ -87,5 +92,6 @@ var syncCmd = &cobra.Command{
 
 func init() {
 	syncCmd.Flags().BoolVar(&refreshSyncRepos, "refresh", false, "Bypass the repository cache and re-fetch from GitHub")
+	addProfileFlag(syncCmd)
 	rootCmd.AddCommand(syncCmd)
 }
