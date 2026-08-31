@@ -134,3 +134,36 @@ rel cache status        # show cache age and repo count for the active profile
 rel cache clear         # delete the cached list of the active profile
 rel cache clear --all   # delete every cached list
 ```
+
+### Shell Completion
+
+`rel` completes commands, flags and — most usefully — your profile names.
+
+The quickest way to set it up:
+
+```bash
+rel completion install          # detects $SHELL and writes the script
+rel completion install --shell zsh
+rel completion install --print  # only show where the script would go
+```
+
+To install it manually, or to inspect the script first:
+
+```bash
+rel completion bash > ~/.local/share/bash-completion/completions/rel
+rel completion zsh  > "${fpath[1]}/_rel"
+rel completion fish > ~/.config/fish/completions/rel.fish
+rel completion powershell | Out-String | Invoke-Expression
+```
+
+Restart your shell afterwards. What gets completed:
+
+| Input | Suggestion |
+| --- | --- |
+| `rel profile use <TAB>` | profile names, with the active one marked and a summary of each |
+| `rel profile delete <TAB>` | the same list |
+| `rel release --profile <TAB>` | the same list (also for `rel sync`) |
+| `rel <TAB>` | subcommands and their descriptions |
+| `rel release <TAB>` | flags only — no stray file name suggestions |
+
+Completion never calls the GitHub API; it reads only the local config file, so it works offline and without a token.
