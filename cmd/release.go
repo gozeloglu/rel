@@ -2,15 +2,21 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/gozeloglu/rel/pkg/github"
 	"github.com/gozeloglu/rel/pkg/tui"
 	"github.com/gozeloglu/rel/pkg/utils"
 	"github.com/spf13/cobra"
 )
+
+var refreshReleaseRepos bool
 
 var releaseCmd = &cobra.Command{
 	Use:   "release",
@@ -22,19 +28,17 @@ var releaseCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println("Fetching repositories...")
-		repos, err := client.FetchRepos(ctx)
+		repoNames, err := fetchRepoNames(ctx, client, refreshReleaseRepos)
 		if err != nil {
-			return fmt.Errorf("failed to fetch repos: %w", err)
-		}
-
-		var repoNames []string
-		for _, r := range repos {
-			repoNames = append(repoNames, r.GetName())
+			return err
 		}
 
 		selectedRepos, err := tui.SelectRepos(repoNames)
 		if err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				fmt.Println("\nOperation aborted by user. Exiting...")
+				return nil
+			}
 			return err
 		}
 		if len(selectedRepos) == 0 {
@@ -42,57 +46,104 @@ var releaseCmd = &cobra.Command{
 			return nil
 		}
 
-		var prURLs []string
+		fmt.Println("\n⏳ Fetching latest tags concurrently...")
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 5)
+		tagsMap := make(map[string]string)
+		var mapMutex sync.Mutex
 
 		for _, repo := range selectedRepos {
-			fmt.Printf("\nProcessing %s...\n", repo)
-			tag, err := client.GetLatestReleaseTag(ctx, repo)
-			if err != nil {
-				fmt.Printf("❌ Failed to get latest tag for %s: %v\n", repo, err)
-				continue
+			wg.Add(1)
+			go func(r string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				tag, err := client.GetLatestReleaseTag(ctx, r)
+				if err != nil {
+					fmt.Printf("❌ [%s] Failed to get latest tag: %v\n", r, err)
+					return
+				}
+				mapMutex.Lock()
+				tagsMap[r] = tag
+				mapMutex.Unlock()
+			}(repo)
+		}
+		wg.Wait()
+
+		// Phase 2: Sequential TUI for version prompts
+		versionsToRelease := make(map[string]string)
+		for _, repo := range selectedRepos {
+			tag, ok := tagsMap[repo]
+			if !ok {
+				continue // skip failed repos
 			}
 			if tag != "" {
-				fmt.Printf("✅ Found latest tag: %s\n", tag)
+				fmt.Printf("\n✅ [%s] Found latest tag: %s\n", repo, tag)
 			} else {
-				fmt.Println("ℹ️ No previous tag found, defaulting to 1.0.0")
+				fmt.Printf("\nℹ️ [%s] No previous tag found, defaulting to 1.0.0\n", repo)
 			}
 
 			nextDefault := utils.BumpMinor(tag)
 			version, err := tui.InputVersion(repo, nextDefault)
 			if err != nil {
+				if errors.Is(err, huh.ErrUserAborted) {
+					fmt.Println("\nOperation aborted by user. Exiting...")
+					return nil
+				}
 				return err
 			}
-
-			fmt.Println("⏳ Checking if master is synced with dev...")
-			isAhead, err := client.CheckSyncStatus(ctx, repo)
-			if err != nil {
-				fmt.Printf("❌ Failed to check sync status for %s: %v\n", repo, err)
-				continue
-			}
-
-			if isAhead {
-				fmt.Printf("❌ Master is ahead of Dev. Sync missing for %s!\n", repo)
-				continue
-			}
-
-			branchName, tagName := utils.GenerateBranchAndTag(version)
-			fmt.Printf("Creating branch %s...\n", branchName)
-			err = client.CreateReleaseBranch(ctx, repo, branchName)
-			if err != nil {
-				fmt.Printf("❌ Failed to create branch for %s: %v\n", repo, err)
-				continue
-			}
-
-			fmt.Printf("Creating PR for %s...\n", tagName)
-			prURL, err := client.CreateReleasePR(ctx, repo, branchName, tagName)
-			if err != nil {
-				fmt.Printf("❌ Failed to create PR for %s: %v\n", repo, err)
-				continue
-			}
-
-			prURLs = append(prURLs, prURL)
-			fmt.Printf("✅ Success: %s\n", prURL)
+			versionsToRelease[repo] = version
 		}
+
+		// Phase 3: Concurrent Release Operations
+		fmt.Println("\n⏳ Starting release processes concurrently...")
+		var prURLs []string
+		var prMutex sync.Mutex
+		var errCount int32
+
+		for repo, version := range versionsToRelease {
+			wg.Add(1)
+			go func(r, v string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				isAhead, err := client.CheckSyncStatus(ctx, r)
+				if err != nil {
+					fmt.Printf("❌ [%s] Failed to check sync status: %v\n", r, err)
+					atomic.AddInt32(&errCount, 1)
+					return
+				}
+
+				if isAhead {
+					fmt.Printf("❌ [%s] Master is ahead of Dev. Sync missing!\n", r)
+					atomic.AddInt32(&errCount, 1)
+					return
+				}
+
+				branchName, tagName := utils.GenerateBranchAndTag(v)
+				err = client.CreateReleaseBranch(ctx, r, branchName)
+				if err != nil {
+					fmt.Printf("❌ [%s] Failed to create branch: %v\n", r, err)
+					atomic.AddInt32(&errCount, 1)
+					return
+				}
+
+				prURL, err := client.CreateReleasePR(ctx, r, branchName, tagName)
+				if err != nil {
+					fmt.Printf("❌ [%s] Failed to create PR: %v\n", r, err)
+					atomic.AddInt32(&errCount, 1)
+					return
+				}
+
+				prMutex.Lock()
+				prURLs = append(prURLs, prURL)
+				prMutex.Unlock()
+				fmt.Printf("✅ [%s] Created PR: %s\n", r, prURL)
+			}(repo, version)
+		}
+		wg.Wait()
 
 		if len(prURLs) > 0 {
 			filename := fmt.Sprintf("release-notes-%s.md", time.Now().Format("2006-01-02-15-04"))
@@ -106,9 +157,9 @@ var releaseCmd = &cobra.Command{
 			for _, url := range prURLs {
 				f.WriteString(fmt.Sprintf("- %s\n", url))
 			}
-			fmt.Printf("\n🎉 Release process completed! Wrote %s\n", filename)
+			fmt.Printf("\n🎉 Release process completed! Wrote %s. Errors: %d\n", filename, errCount)
 		} else {
-			fmt.Println("\nNo PRs were created.")
+			fmt.Printf("\nNo PRs were created. Errors: %d\n", errCount)
 		}
 
 		return nil
@@ -116,5 +167,6 @@ var releaseCmd = &cobra.Command{
 }
 
 func init() {
+	releaseCmd.Flags().BoolVar(&refreshReleaseRepos, "refresh", false, "Bypass the repository cache and re-fetch from GitHub")
 	rootCmd.AddCommand(releaseCmd)
 }

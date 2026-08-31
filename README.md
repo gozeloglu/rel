@@ -8,6 +8,7 @@ It helps developers quickly select repositories, bump versions, check branch syn
 
 - **`rel release`**: Interactive release workflow. It fetches repositories, calculates the next minor version, validates if `master` is ahead of `dev`, creates a `release/x.y.z` branch, opens a PR, and generates a markdown file with release notes.
 - **`rel sync`**: Post-release utility. Automatically checks if `master` is ahead of `dev` and opens sync PRs (`chore: master to dev sync`) to keep branches up-to-date.
+- **Repository cache**: The repository list is cached locally for 30 minutes, so repeated runs don't re-fetch it from GitHub every time.
 
 ## Prerequisites
 
@@ -47,6 +48,27 @@ rel release
 ```
 
 Use your arrow keys and spacebar to select the repositories you want to release, confirm or edit the version numbers, and the tool will automatically handle branching and PR creation.
+
+Key bindings in the repository list:
+
+| Key | Action |
+| --- | --- |
+| `/` | Start filtering |
+| `esc` | Cancel the filter input, then clear the filter and return to the full list |
+| `space` | Toggle selection |
+| `enter` | Confirm selection |
+| `ctrl+c` | Quit the program |
+
+### Repository Cache
+
+The repository list is cached under your OS cache directory (`~/Library/Caches/rel` on macOS) for 30 minutes.
+
+```bash
+rel release --refresh   # bypass the cache and re-fetch
+rel sync --refresh      # same for sync
+rel cache status        # show cache age and repo count
+rel cache clear         # delete the cached list
+```
 
 ### Sync Branches
 

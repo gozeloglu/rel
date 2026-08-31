@@ -8,6 +8,9 @@ import (
 func InputVersion(repo string, defaultVersion string) (string, error) {
 	var version string
 
+	keyMap := huh.NewDefaultKeyMap()
+	keyMap.Quit.SetKeys("ctrl+c", "esc")
+
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -16,7 +19,7 @@ func InputVersion(repo string, defaultVersion string) (string, error) {
 				Value(&version).
 				Placeholder(defaultVersion),
 		),
-	)
+	).WithTheme(huh.ThemeCharm()).WithKeyMap(keyMap)
 
 	err := form.Run()
 	

@@ -2,12 +2,18 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 
+	"github.com/charmbracelet/huh"
 	"github.com/gozeloglu/rel/pkg/github"
 	"github.com/gozeloglu/rel/pkg/tui"
 	"github.com/spf13/cobra"
 )
+
+var refreshSyncRepos bool
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
@@ -19,19 +25,17 @@ var syncCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println("Fetching repositories...")
-		repos, err := client.FetchRepos(ctx)
+		repoNames, err := fetchRepoNames(ctx, client, refreshSyncRepos)
 		if err != nil {
-			return fmt.Errorf("failed to fetch repos: %w", err)
-		}
-
-		var repoNames []string
-		for _, r := range repos {
-			repoNames = append(repoNames, r.GetName())
+			return err
 		}
 
 		selectedRepos, err := tui.SelectRepos(repoNames)
 		if err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				fmt.Println("\nOperation aborted by user. Exiting...")
+				return nil
+			}
 			return err
 		}
 		if len(selectedRepos) == 0 {
@@ -39,34 +43,50 @@ var syncCmd = &cobra.Command{
 			return nil
 		}
 
+		fmt.Println("Starting sync process concurrently...")
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 5)
+		var errCount, successCount int32
+
 		for _, repo := range selectedRepos {
-			fmt.Printf("\nChecking sync status for %s...\n", repo)
-			
-			isAhead, err := client.CheckSyncStatus(ctx, repo)
-			if err != nil {
-				fmt.Printf("❌ Failed to check sync status for %s: %v\n", repo, err)
-				continue
-			}
+			wg.Add(1)
+			go func(r string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 
-			if !isAhead {
-				fmt.Printf("✅ Master is not ahead of Dev. No sync needed for %s.\n", repo)
-				continue
-			}
+				isAhead, err := client.CheckSyncStatus(ctx, r)
+				if err != nil {
+					fmt.Printf("❌ [%s] Failed to check sync status: %v\n", r, err)
+					atomic.AddInt32(&errCount, 1)
+					return
+				}
 
-			fmt.Printf("Creating master to dev sync PR for %s...\n", repo)
-			prURL, err := client.CreateSyncPR(ctx, repo)
-			if err != nil {
-				fmt.Printf("❌ Failed to create sync PR for %s: %v\n", repo, err)
-				continue
-			}
+				if !isAhead {
+					fmt.Printf("✅ [%s] Master is not ahead of Dev. No sync needed.\n", r)
+					return
+				}
 
-			fmt.Printf("✅ Success: %s\n", prURL)
+				prURL, err := client.CreateSyncPR(ctx, r)
+				if err != nil {
+					fmt.Printf("❌ [%s] Failed to create sync PR: %v\n", r, err)
+					atomic.AddInt32(&errCount, 1)
+					return
+				}
+
+				fmt.Printf("✅ [%s] Created Sync PR: %s\n", r, prURL)
+				atomic.AddInt32(&successCount, 1)
+			}(repo)
 		}
+		
+		wg.Wait()
+		fmt.Printf("\nSync completed. Success: %d, Errors: %d\n", successCount, errCount)
 
 		return nil
 	},
 }
 
 func init() {
+	syncCmd.Flags().BoolVar(&refreshSyncRepos, "refresh", false, "Bypass the repository cache and re-fetch from GitHub")
 	rootCmd.AddCommand(syncCmd)
 }
