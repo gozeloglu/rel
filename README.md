@@ -53,11 +53,15 @@ Key bindings in the repository list:
 
 | Key | Action |
 | --- | --- |
-| `/` | Start filtering |
-| `esc` | Cancel the filter input, then clear the filter and return to the full list |
-| `space` | Toggle selection |
-| `enter` | Confirm selection |
-| `ctrl+c` | Quit the program |
+| `↑`/`↓` or `k`/`j` | Move the cursor |
+| `space` | Toggle the highlighted repository |
+| `ctrl+a` / `a` | Toggle every currently visible repository |
+| `/` | Start filtering — what you type is shown live on the `Filter:` line and matches are highlighted |
+| `tab` | Toggle a repository without leaving the filter input |
+| `ctrl+u` | Clear the filter input while typing |
+| `esc` | Stop typing the filter; press again to clear the filter and return to the full list |
+| `enter` | Apply the filter while typing, otherwise confirm the selection |
+| `ctrl+c` / `q` | Quit |
 
 ### Repository Cache
 

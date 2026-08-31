@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+
 	"github.com/charmbracelet/huh"
 )
 
@@ -22,10 +24,13 @@ func InputVersion(repo string, defaultVersion string) (string, error) {
 	).WithTheme(huh.ThemeCharm()).WithKeyMap(keyMap)
 
 	err := form.Run()
-	
+	if errors.Is(err, huh.ErrUserAborted) {
+		err = ErrAborted
+	}
+
 	if version == "" {
 		version = defaultVersion
 	}
-	
+
 	return version, err
 }

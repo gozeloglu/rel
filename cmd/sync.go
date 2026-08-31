@@ -7,7 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/charmbracelet/huh"
 	"github.com/gozeloglu/rel/pkg/github"
 	"github.com/gozeloglu/rel/pkg/tui"
 	"github.com/spf13/cobra"
@@ -32,7 +31,7 @@ var syncCmd = &cobra.Command{
 
 		selectedRepos, err := tui.SelectRepos(repoNames)
 		if err != nil {
-			if errors.Is(err, huh.ErrUserAborted) {
+			if errors.Is(err, tui.ErrAborted) {
 				fmt.Println("\nOperation aborted by user. Exiting...")
 				return nil
 			}
@@ -78,7 +77,7 @@ var syncCmd = &cobra.Command{
 				atomic.AddInt32(&successCount, 1)
 			}(repo)
 		}
-		
+
 		wg.Wait()
 		fmt.Printf("\nSync completed. Success: %d, Errors: %d\n", successCount, errCount)
 

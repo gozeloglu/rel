@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/gozeloglu/rel/pkg/github"
 	"github.com/gozeloglu/rel/pkg/tui"
 	"github.com/gozeloglu/rel/pkg/utils"
@@ -35,7 +34,7 @@ var releaseCmd = &cobra.Command{
 
 		selectedRepos, err := tui.SelectRepos(repoNames)
 		if err != nil {
-			if errors.Is(err, huh.ErrUserAborted) {
+			if errors.Is(err, tui.ErrAborted) {
 				fmt.Println("\nOperation aborted by user. Exiting...")
 				return nil
 			}
@@ -87,7 +86,7 @@ var releaseCmd = &cobra.Command{
 			nextDefault := utils.BumpMinor(tag)
 			version, err := tui.InputVersion(repo, nextDefault)
 			if err != nil {
-				if errors.Is(err, huh.ErrUserAborted) {
+				if errors.Is(err, tui.ErrAborted) {
 					fmt.Println("\nOperation aborted by user. Exiting...")
 					return nil
 				}
