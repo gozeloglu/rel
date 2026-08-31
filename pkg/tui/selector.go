@@ -24,6 +24,7 @@ type selectorModel struct {
 	all      []string
 	visible  []string
 	selected map[string]bool
+	notes    map[string]string
 
 	filter    string
 	filtering bool
@@ -336,7 +337,11 @@ func (m *selectorModel) View() string {
 			check = checkedStyle.Render("[✓]")
 		}
 
-		sb.WriteString(cursor + check + " " + highlightMatch(repo, m.filter, base) + "\n")
+		sb.WriteString(cursor + check + " " + highlightMatch(repo, m.filter, base))
+		if note := m.notes[repo]; note != "" {
+			sb.WriteString(noteStyle.Render("  " + note))
+		}
+		sb.WriteString("\n")
 	}
 
 	if len(m.visible) > m.visibleRows {
@@ -367,8 +372,36 @@ func (m *selectorModel) result() []string {
 
 // SelectRepos shows a multi-select screen to choose repositories.
 func SelectRepos(repos []string) ([]string, error) {
-	m := newSelectorModel("Select Repositories", repos)
+	return runSelector(newSelectorModel("Select Repositories", repos))
+}
 
+// RepoNote pairs a repository with a short annotation rendered next to its
+// name, such as the release that triggered it.
+type RepoNote struct {
+	Repo string
+	Note string
+}
+
+// ConfirmRepos shows the same multi-select screen with every entry already
+// checked, so the user only has to uncheck what they want to leave out.
+func ConfirmRepos(title string, items []RepoNote) ([]string, error) {
+	repos := make([]string, 0, len(items))
+	notes := make(map[string]string, len(items))
+	for _, it := range items {
+		repos = append(repos, it.Repo)
+		notes[it.Repo] = it.Note
+	}
+
+	m := newSelectorModel(title, repos)
+	m.notes = notes
+	for _, r := range repos {
+		m.selected[r] = true
+	}
+
+	return runSelector(m)
+}
+
+func runSelector(m *selectorModel) ([]string, error) {
 	final, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return nil, err

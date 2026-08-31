@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -97,7 +98,7 @@ var releaseCmd = &cobra.Command{
 
 		// Phase 3: Concurrent Release Operations
 		fmt.Println("\n⏳ Starting release processes concurrently...")
-		var prURLs []string
+		var created []createdPR
 		var prMutex sync.Mutex
 		var errCount int32
 
@@ -138,29 +139,34 @@ var releaseCmd = &cobra.Command{
 				}
 
 				prMutex.Lock()
-				prURLs = append(prURLs, prURL)
+				created = append(created, createdPR{Repo: r, URL: prURL})
 				prMutex.Unlock()
 				fmt.Printf("✅ [%s] Created PR: %s\n", r, prURL)
 			}(repo, version)
 		}
 		wg.Wait()
 
-		if len(prURLs) > 0 {
-			filename := fmt.Sprintf("release-notes-%s.md", time.Now().Format("2006-01-02-15-04"))
-			f, err := os.Create(filename)
-			if err != nil {
-				return fmt.Errorf("failed to create release notes file: %w", err)
-			}
-			defer f.Close()
-
-			f.WriteString("# Release Notes\n\n")
-			for _, url := range prURLs {
-				f.WriteString(fmt.Sprintf("- %s\n", url))
-			}
-			fmt.Printf("\n🎉 Release process completed! Wrote %s. Errors: %d\n", filename, errCount)
-		} else {
+		if len(created) == 0 {
 			fmt.Printf("\nNo PRs were created. Errors: %d\n", errCount)
+			return nil
 		}
+
+		sort.Slice(created, func(i, j int) bool { return created[i].Repo < created[j].Repo })
+
+		filename := fmt.Sprintf("release-notes-%s.md", time.Now().Format("2006-01-02-15-04"))
+		f, err := os.Create(filename)
+		if err != nil {
+			return fmt.Errorf("failed to create release notes file: %w", err)
+		}
+		defer f.Close()
+
+		f.WriteString("# Release Notes\n\n")
+		for _, pr := range created {
+			f.WriteString(fmt.Sprintf("- %s: %s\n", pr.Repo, pr.URL))
+		}
+		fmt.Printf("\n🎉 Release process completed! Wrote %s. Errors: %d\n", filename, errCount)
+
+		reportCreatedPRs(created)
 
 		return nil
 	},
@@ -168,6 +174,7 @@ var releaseCmd = &cobra.Command{
 
 func init() {
 	releaseCmd.Flags().BoolVar(&refreshReleaseRepos, "refresh", false, "Bypass the repository cache and re-fetch from GitHub")
+	addOpenFlag(releaseCmd)
 	addProfileFlag(releaseCmd)
 	rootCmd.AddCommand(releaseCmd)
 }

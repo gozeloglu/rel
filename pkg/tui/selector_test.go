@@ -196,3 +196,82 @@ func TestSpaceIsNotDuplicatedInFilter(t *testing.T) {
 		t.Fatalf("expected 2 matches, got %v", m.visible)
 	}
 }
+
+// newConfirmTestModel mirrors what ConfirmRepos builds, without running a
+// bubbletea program.
+func newConfirmTestModel(items []RepoNote) *selectorModel {
+	repos := make([]string, 0, len(items))
+	notes := make(map[string]string, len(items))
+	for _, it := range items {
+		repos = append(repos, it.Repo)
+		notes[it.Repo] = it.Note
+	}
+
+	m := newSelectorModel("Confirm", repos)
+	m.notes = notes
+	for _, r := range repos {
+		m.selected[r] = true
+	}
+	return m
+}
+
+func TestConfirmModelPreselectsEverything(t *testing.T) {
+	m := newConfirmTestModel([]RepoNote{
+		{Repo: "payment-alpha", Note: "v1.2.0 · 5m ago"},
+		{Repo: "payment-beta", Note: "v3.0.1 · 42m ago"},
+	})
+
+	if got := m.selectedCount(); got != 2 {
+		t.Fatalf("selectedCount = %d, want 2", got)
+	}
+	if got := len(m.result()); got != 2 {
+		t.Errorf("len(result) = %d, want 2", got)
+	}
+}
+
+func TestConfirmModelRendersNotes(t *testing.T) {
+	m := newConfirmTestModel([]RepoNote{
+		{Repo: "payment-alpha", Note: "v1.2.0 · 5m ago"},
+	})
+
+	view := m.View()
+	if !strings.Contains(view, "payment-alpha") {
+		t.Errorf("view is missing the repository name:\n%s", view)
+	}
+	if !strings.Contains(view, "v1.2.0 · 5m ago") {
+		t.Errorf("view is missing the release note:\n%s", view)
+	}
+}
+
+func TestConfirmModelAllowsUnchecking(t *testing.T) {
+	m := newConfirmTestModel([]RepoNote{
+		{Repo: "payment-alpha", Note: "v1.2.0 · 5m ago"},
+		{Repo: "payment-beta", Note: "v3.0.1 · 42m ago"},
+	})
+
+	m = feed(t, m, tea.KeyMsg{Type: tea.KeySpace})
+
+	got := m.result()
+	if len(got) != 1 || got[0] != "payment-beta" {
+		t.Errorf("result = %v, want [payment-beta]", got)
+	}
+}
+
+func TestSelectorWithoutNotesRendersPlainRows(t *testing.T) {
+	m := newTestModel()
+
+	if got := m.selectedCount(); got != 0 {
+		t.Errorf("selectedCount = %d, want 0 for the plain selector", got)
+	}
+
+	for _, line := range strings.Split(m.View(), "\n") {
+		idx := strings.Index(line, "[ ]")
+		if idx < 0 {
+			continue
+		}
+		repo := strings.TrimSpace(line[idx+len("[ ]"):])
+		if strings.ContainsAny(repo, " \t") {
+			t.Errorf("plain selector row must contain only the repository name, got %q", repo)
+		}
+	}
+}

@@ -17,5 +17,6 @@ var (
 	matchStyle     = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(lipgloss.Color("214"))
 	helpStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	warnStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	noteStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	cursorBlock    = lipgloss.NewStyle().Reverse(true)
 )

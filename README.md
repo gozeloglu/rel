@@ -13,7 +13,7 @@ It helps you quickly select repositories, bump versions, check branch synchroniz
 
 - **`rel init`**: One-time setup wizard. Asks for your organization (or username), an optional team, repository filters, and detects your branch names from a real repository.
 - **`rel release`**: Interactive release workflow. Fetches repositories, calculates the next minor version, validates that the release branch is not ahead of the development branch, creates a `release/x.y.z` branch, opens a PR, and writes a markdown file with release notes.
-- **`rel sync`**: Post-release utility. Checks whether the release branch is ahead of the development branch and opens sync PRs to keep them up to date.
+- **`rel sync`**: Post-release utility. Checks whether the release branch is ahead of the development branch and opens sync PRs to keep them up to date. `--auto` detects recently released repositories for you, so bulk deploys don't need hand-picking.
 - **`rel profile`**: Switch between multiple setups (for example your company team and your personal account) without editing any files.
 - **Repository cache**: The repository list is cached locally for 30 minutes, per profile, so repeated runs don't re-fetch it from GitHub every time.
 
@@ -123,6 +123,87 @@ rel sync
 ```
 
 Opens `chore: <base> to <dev> sync` pull requests wherever the release branch is ahead. Profiles that use a single branch for both sides skip this step automatically.
+
+### Auto Sync
+
+After a bulk deploy, picking every affected repository by hand is slow and easy to get wrong. `--auto` finds them for you:
+
+```bash
+rel sync --auto                 # repositories released in the last 2 hours
+rel sync --auto --since 6h      # widen the window
+rel sync --auto --dry-run       # report only, never opens a pull request
+rel sync --auto --yes           # skip the confirmation screen
+```
+
+A repository is picked up when **both** are true:
+
+1. its base branch is ahead of its development branch, and
+2. it published a release (or pushed a tag) inside the window.
+
+The release is used as the deploy signal because it is what actually moves the base branch, and it needs no assumptions about how your deployment pipeline is wired.
+
+Everything else is reported and skipped, grouped by reason: already in sync, no base/dev branch, never released, released too long ago, or already has an open sync PR. That last check makes repeated runs safe — auto sync never stacks duplicate pull requests.
+
+Detected repositories are shown in a confirmation screen with every entry pre-selected, so you only have to uncheck what you want to leave out. Pass `--yes` for unattended runs.
+
+> `--since`, `--yes` and `--dry-run` only apply together with `--auto`.
+
+#### The scan report
+
+Every auto run prints a full picture of the fleet, so nothing is hidden behind a count:
+
+```
+Scan · acme/payments · master → dev · window 2h
+──────────────────────────────────────────────────────────────────────────
+
+  ✔  READY TO SYNC · 1
+     payment-alpha           3 commits  diverged 4h ago    v1.2.0 · 12m
+
+  ⏭  SYNC PR ALREADY OPEN · 2
+     payment-service         4 commits  diverged 180d ago  v1.76.0 · 180d
+       └ https://github.com/acme/payment-service/pull/20
+     payment-payout-service  2 commits  diverged 101d ago  v1.8.0 · 89d
+
+  ⏳  OUT OF SYNC · RELEASED BEFORE WINDOW · 15
+     courier-payback-cron    5 commits  diverged 6y3mo ago  v0.0.0 · 6y3mo
+     ...
+
+  ⚠  OUT OF SYNC · NEVER RELEASED · 8
+     payment-webhook-service  4 commits  diverged 1y2mo ago  never released
+     ...
+
+  ✓  ALREADY IN SYNC · 55
+     payment-api-gateway, payment-api-service, payment-auth-service,
+     ...
+
+  −  NOT APPLICABLE · no 'master' or 'dev' branch · 6
+     payment-load-tests, payment-jira-cases, ...
+
+  waiting  = commits on master not yet in dev
+  diverged = age of the newest commit both branches share
+  scanned 86 repositories
+```
+
+Groups that need attention get a table; the rest collapse into a name list. Stale groups are sorted longest-forgotten first, so the repositories most likely to have been missed float to the top. All of this comes from the comparison call auto sync already makes, so the report costs no extra API requests.
+
+### Opening pull requests in your browser
+
+After `rel release` or `rel sync` creates pull requests, the list is printed with each repository next to its URL:
+
+```
+Created 3 pull requests
+   payment-alpha   https://github.com/acme/payment-alpha/pull/91
+   payment-beta    https://github.com/acme/payment-beta/pull/44
+```
+
+Pass `--open` to launch them all straight away:
+
+```bash
+rel sync --auto --open
+rel release --open
+```
+
+Without the flag, `rel` asks once whether to open them, defaulting to no. Piped and CI runs are never prompted.
 
 ### Profiles
 
