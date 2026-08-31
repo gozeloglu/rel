@@ -13,7 +13,7 @@ func BumpMinor(tag string) string {
 	if tag == "" {
 		return "1.0.0"
 	}
-	
+
 	vTag := tag
 	if !strings.HasPrefix(tag, "v") {
 		vTag = "v" + tag
@@ -24,7 +24,7 @@ func BumpMinor(tag string) string {
 	}
 
 	major := semver.Major(vTag)
-	
+
 	v := strings.TrimPrefix(vTag, major+".")
 	parts := strings.Split(v, ".")
 	var minor int

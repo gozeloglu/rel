@@ -1,0 +1,126 @@
+version: 2
+
+project_name: rel
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+
+builds:
+  - id: rel
+    main: .
+    binary: rel
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: rel
+    ids:
+      - rel
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "^style:"
+      - "^refactor\\(test\\):"
+      - "merge conflict"
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Other work
+      order: 999
+
+homebrew_casks:
+  - name: rel
+    ids:
+      - rel
+    binaries:
+      - rel
+    homepage: "https://github.com/gozeloglu/rel"
+    description: "TUI tool that automates periodic GitHub release processes"
+    license: "MIT"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore: bump rel to {{ .Tag }}"
+    repository:
+      owner: gozeloglu
+      name: homebrew-tap
+      branch: main
+      # The workflow scoped GITHUB_TOKEN cannot write to another repository.
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    # Generate the completion scripts by running the installed binary, so brew
+    # users get them without running 'rel completion install'.
+    generate_completions_from_executable:
+      executable: "bin/rel"
+      args:
+        - completion
+      base_name: rel
+      shell_parameter_format: cobra
+      shells:
+        - bash
+        - zsh
+        - fish
+    hooks:
+      post:
+        # The binary is neither signed nor notarized, so strip the quarantine
+        # attribute macOS adds to downloads. Without this, Gatekeeper reports
+        # the binary as damaged.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/rel"]
+          end
+    caveats: |
+      Set a GitHub token before using rel:
+
+        export GH_TOKEN="your_github_token_here"
+
+      Then run 'rel init' once to create a profile.
+
+release:
+  footer: |
+    ## Installation
+
+    ```bash
+    brew install gozeloglu/tap/rel
+    ```
+
+    **Full changelog**: https://github.com/gozeloglu/rel/compare/{{ .PreviousTag }}...{{ .Tag }}

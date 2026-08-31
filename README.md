@@ -1,5 +1,10 @@
 # rel
 
+[![CI](https://github.com/gozeloglu/rel/actions/workflows/ci.yml/badge.svg)](https://github.com/gozeloglu/rel/actions/workflows/ci.yml)
+[![Release](https://github.com/gozeloglu/rel/actions/workflows/release.yml/badge.svg)](https://github.com/gozeloglu/rel/actions/workflows/release.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/gozeloglu/rel.svg)](https://pkg.go.dev/github.com/gozeloglu/rel)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 `rel` is a fast, interactive TUI (Terminal User Interface) CLI tool that automates periodic GitHub release processes for **any** organization, team or personal account.
 
 It helps you quickly select repositories, bump versions, check branch synchronization, create release branches, and automatically open pull requests.
@@ -14,10 +19,44 @@ It helps you quickly select repositories, bump versions, check branch synchroniz
 
 ## Prerequisites
 
-- [Go](https://golang.org/doc/install) (1.20+)
-- A GitHub Personal Access Token with the `repo` scope. Add `read:org` as well if you want to scope repositories to a team.
+A GitHub Personal Access Token with the `repo` scope. Add `read:org` as well if you want to scope repositories to a team.
 
-## Build / Installation
+## Installation
+
+### Homebrew (recommended)
+
+```bash
+brew install gozeloglu/tap/rel
+```
+
+This installs a prebuilt binary for macOS and Linux (Intel and Apple Silicon / arm64) and sets up shell completions automatically. Upgrading later is just `brew upgrade rel`.
+
+### Go
+
+If you already have Go installed:
+
+```bash
+go install github.com/gozeloglu/rel@latest
+```
+
+### Prebuilt binaries
+
+Download an archive for your platform from the [releases page](https://github.com/gozeloglu/rel/releases), then:
+
+```bash
+tar -xzf rel_<version>_<os>_<arch>.tar.gz
+sudo mv rel /usr/local/bin/
+```
+
+On macOS, a manually downloaded binary is quarantined by Gatekeeper. If you see "rel is damaged and cannot be opened", clear the attribute:
+
+```bash
+xattr -d com.apple.quarantine /usr/local/bin/rel
+```
+
+(The Homebrew installation does this for you.)
+
+### From source
 
 ```bash
 git clone https://github.com/gozeloglu/rel.git
@@ -25,10 +64,10 @@ cd rel
 go build -o rel
 ```
 
-(Optional) Move the `rel` binary to your system's `$PATH` for global access:
+Check what you installed with:
 
 ```bash
-mv rel /usr/local/bin/
+rel version
 ```
 
 ## Getting Started
@@ -139,7 +178,9 @@ rel cache clear --all   # delete every cached list
 
 `rel` completes commands, flags and — most usefully — your profile names.
 
-The quickest way to set it up:
+If you installed with Homebrew, completions are already set up — skip to the table below.
+
+Otherwise, the quickest way to set it up:
 
 ```bash
 rel completion install          # detects $SHELL and writes the script
@@ -167,3 +208,33 @@ Restart your shell afterwards. What gets completed:
 | `rel release <TAB>` | flags only — no stray file name suggestions |
 
 Completion never calls the GitHub API; it reads only the local config file, so it works offline and without a token.
+
+## Contributing
+
+```bash
+go test ./...
+go vet ./...
+gofmt -l cmd pkg main.go
+```
+
+To validate the release pipeline without publishing anything:
+
+```bash
+goreleaser check
+goreleaser release --snapshot --clean
+```
+
+### Cutting a release of rel itself
+
+Note the distinction: `rel release` releases *your* repositories, while `rel`'s own version is cut with a git tag.
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The tag triggers [`release.yml`](.github/workflows/release.yml), which builds every platform, publishes a GitHub release and updates the [Homebrew tap](https://github.com/gozeloglu/homebrew-tap).
+
+## License
+
+[MIT](LICENSE)
