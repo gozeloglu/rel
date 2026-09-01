@@ -382,37 +382,40 @@ func applyMerges(ctx context.Context, client *github.Client, profile *config.Pro
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	sem := make(chan struct{}, 5)
-	var merged []string
+	var merged []prLink
 	var errCount int32
 
 	for _, item := range items {
 		wg.Add(1)
-		go func(repo string, number int) {
+		go func(repo string, pr github.ReleasePR) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			if _, err := client.MergePR(ctx, repo, number, method); err != nil {
-				fmt.Printf("❌ [%s] Failed to merge #%d: %v\n", repo, number, err)
+			if _, err := client.MergePR(ctx, repo, pr.Number, method); err != nil {
+				fmt.Printf("❌ [%s] Failed to merge #%d: %v\n", repo, pr.Number, err)
 				atomic.AddInt32(&errCount, 1)
 				return
 			}
 
-			fmt.Printf("✅ [%s] Merged #%d (%s)\n", repo, number, method)
+			fmt.Printf("✅ [%s] Merged #%d (%s)\n", repo, pr.Number, method)
 			mu.Lock()
-			merged = append(merged, repo)
+			merged = append(merged, prLink{Repo: repo, URL: pr.URL})
 			mu.Unlock()
-		}(item.repo, item.pr.Number)
+		}(item.repo, item.pr)
 	}
 	wg.Wait()
 
-	sort.Strings(merged)
+	sort.Slice(merged, func(i, j int) bool { return merged[i].Repo < merged[j].Repo })
 	fmt.Printf("\nMerge completed. Merged: %d, Errors: %d\n", len(merged), errCount)
+
+	reportPRs(fmt.Sprintf("Merged %d %s",
+		len(merged), plural(len(merged), "pull request", "pull requests")), merged)
 
 	// Merging the release branch is what puts the base branch ahead, which is
 	// exactly what sync exists to clean up.
 	if len(merged) > 0 && !profile.SingleBranch() {
-		fmt.Println(dimStyle.Render("Next: 'rel sync --auto' opens the sync pull requests."))
+		fmt.Println(dimStyle.Render("\nNext: 'rel sync --auto' opens the sync pull requests."))
 	}
 
 	return int(errCount)
@@ -426,6 +429,7 @@ func init() {
 	mergeCmd.Flags().BoolVar(&mergeDryRun, "dry-run", false, "Report what would be merged without merging anything (requires --auto)")
 	_ = mergeCmd.RegisterFlagCompletionFunc("method",
 		cobra.FixedCompletions(mergeMethods, cobra.ShellCompDirectiveNoFileComp))
+	addOpenFlag(mergeCmd)
 	addProfileFlag(mergeCmd)
 	rootCmd.AddCommand(mergeCmd)
 }

@@ -450,11 +450,40 @@ func TestApplyMergesReportsFailures(t *testing.T) {
 		{repo: "beta", pr: relgithub.ReleasePR{Number: 44}},
 	}
 
+	stubOpen(t, false, false, nil)
+
 	if got := applyMerges(context.Background(), client, releasePlanProfile(), items, "squash"); got != 1 {
 		t.Errorf("error count = %d, want 1", got)
 	}
 	if !strings.Contains(gotBody, `"merge_method":"squash"`) {
 		t.Errorf("request body = %s, want the chosen method", gotBody)
+	}
+}
+
+func TestApplyMergesOpensWhatItMerged(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/alpha/pulls/91/merge", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"merged":true,"sha":"abc123"}`))
+	})
+	mux.HandleFunc("/repos/acme/beta/pulls/44/merge", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = w.Write([]byte(`{"message":"Squash merges are not allowed on this repository."}`))
+	})
+
+	client := newAutoSyncTestClient(t, mux)
+
+	opened := stubOpen(t, false, false, nil)
+	openPRs = true
+
+	items := []mergeResult{
+		{repo: "alpha", pr: relgithub.ReleasePR{Number: 91, URL: "https://github.com/acme/alpha/pull/91"}},
+		{repo: "beta", pr: relgithub.ReleasePR{Number: 44, URL: "https://github.com/acme/beta/pull/44"}},
+	}
+
+	applyMerges(context.Background(), client, releasePlanProfile(), items, "squash")
+
+	if len(*opened) != 1 || (*opened)[0] != "https://github.com/acme/alpha/pull/91" {
+		t.Fatalf("opened = %v, want only the pull request that was actually merged", *opened)
 	}
 }
 

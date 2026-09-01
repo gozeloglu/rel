@@ -105,7 +105,7 @@ func createSyncPRs(ctx context.Context, client *github.Client, profile *config.P
 	var errCount, skipCount int32
 
 	var mu sync.Mutex
-	var created []createdPR
+	var created []prLink
 
 	for _, repo := range repos {
 		wg.Add(1)
@@ -142,7 +142,7 @@ func createSyncPRs(ctx context.Context, client *github.Client, profile *config.P
 
 			fmt.Printf("✅ [%s] Created Sync PR: %s\n", r, prURL)
 			mu.Lock()
-			created = append(created, createdPR{Repo: r, URL: prURL})
+			created = append(created, prLink{Repo: r, URL: prURL})
 			mu.Unlock()
 		}(repo)
 	}

@@ -35,8 +35,8 @@ func stubOpen(t *testing.T, tty bool, answer bool, answerErr error) *[]string {
 	return &opened
 }
 
-func samplePRs() []createdPR {
-	return []createdPR{
+func samplePRs() []prLink {
+	return []prLink{
 		{Repo: "alpha", URL: "https://github.com/acme/alpha/pull/1"},
 		{Repo: "beta", URL: "https://github.com/acme/beta/pull/2"},
 	}

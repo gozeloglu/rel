@@ -191,7 +191,7 @@ func applyRelease(ctx context.Context, client *github.Client, profile *config.Pr
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	sem := make(chan struct{}, 5)
-	var created []createdPR
+	var created []prLink
 	var errCount int32
 
 	for _, item := range items {
@@ -231,7 +231,7 @@ func applyRelease(ctx context.Context, client *github.Client, profile *config.Pr
 			}
 
 			mu.Lock()
-			created = append(created, createdPR{Repo: r, URL: prURL})
+			created = append(created, prLink{Repo: r, URL: prURL})
 			mu.Unlock()
 			fmt.Printf("✅ [%s] Created PR: %s\n", r, prURL)
 		}(item.Repo, item.Version)

@@ -151,6 +151,7 @@ rel merge --auto             # find every open release/* pull request
 rel merge --method merge     # merge commit instead of a squash
 rel merge --auto --dry-run   # report only, never merges anything
 rel merge --auto --yes       # skip the confirmation screen
+rel merge --auto --open      # open the merged pull requests in your browser
 ```
 
 Both modes end on the same review screen, and nothing is merged before you approve it:
@@ -159,29 +160,31 @@ Both modes end on the same review screen, and nothing is merged before you appro
 Merge plan · acme/payments · → master · method squash
 ────────────────────────────────────────────────────────────────────────
 
-   payment-alpha         #91  release/1.3.0
-   payment-beta          #44  release/4.0.0
-   payment-core-service  #12  release/2.4.1  ⚠ checks failing
+   1. payment-alpha         #91  release/1.3.0
+   2. payment-beta          #44  release/4.0.0
+   3. payment-core-service  #12  release/2.4.1  ⚠ checks failing
 
    ⚠  3 repositories excluded
 
       ⏭  BLOCKED · checks or reviews · 1
-         payment-delta  #77  release/2.5.0  checks or reviews pending
-           └ https://github.com/acme/payment-delta/pull/77
+         1. payment-delta  #77  release/2.5.0  checks or reviews pending
+            └ https://github.com/acme/payment-delta/pull/77
 
       ✖  CONFLICT · 1
-         payment-epsilon  #8  release/1.1.0  conflicts with master
-           └ https://github.com/acme/payment-epsilon/pull/8
+         1. payment-epsilon  #8  release/1.1.0  conflicts with master
+            └ https://github.com/acme/payment-epsilon/pull/8
 
       ⚠  MORE THAN ONE OPEN RELEASE PR · 1
-         payment-gamma  #31  release/5.1.0  2 open release PRs
-           └ https://github.com/acme/payment-gamma/pull/31
-           └ https://github.com/acme/payment-gamma/pull/32
+         1. payment-gamma  #31  release/5.1.0  2 open release PRs
+            └ https://github.com/acme/payment-gamma/pull/31
+            └ https://github.com/acme/payment-gamma/pull/32
 
    each pull request is merged into master with squash
 
 Merge 3 pull requests with squash? (Y/n)
 ```
+
+Every list is numbered, so the size of a group can be read off its last row without counting.
 
 Answering no takes you back to the selection instead of quitting, with your previous answer still ticked, and nothing is looked up again — so adding or removing a service costs nothing.
 
@@ -195,7 +198,15 @@ The merge method applies to the whole run and is shown in the plan header:
 | `merge` | A merge commit |
 | `rebase` | The commits are replayed onto the base branch |
 
-`--yes` and `--dry-run` only apply together with `--auto`. When the merges are done, `rel` points you at `rel sync --auto`, which is what cleans up the base branch afterwards.
+`--yes` and `--dry-run` only apply together with `--auto`. When the merges are done, the pull requests that landed are listed with their URLs and `--open` launches all of them at once, so nothing has to be looked up in GitHub by hand:
+
+```
+Merged 2 pull requests
+   1. payment-alpha  https://github.com/acme/payment-alpha/pull/91
+   2. payment-beta   https://github.com/acme/payment-beta/pull/44
+```
+
+Finally, `rel` points you at `rel sync --auto`, which is what cleans up the base branch afterwards.
 
 ### Sync Branches
 
@@ -267,12 +278,13 @@ Groups that need attention get a table; the rest collapse into a name list. Stal
 
 ### Opening pull requests in your browser
 
-After `rel release` or `rel sync` creates pull requests, the list is printed with each repository next to its URL:
+After `rel release` or `rel sync` creates pull requests — and after `rel merge` lands them — the list is printed with each repository next to its URL:
 
 ```
 Created 3 pull requests
-   payment-alpha   https://github.com/acme/payment-alpha/pull/91
-   payment-beta    https://github.com/acme/payment-beta/pull/44
+   1. payment-alpha  https://github.com/acme/payment-alpha/pull/91
+   2. payment-beta   https://github.com/acme/payment-beta/pull/44
+   3. payment-core   https://github.com/acme/payment-core/pull/12
 ```
 
 Pass `--open` to launch them all straight away:
@@ -280,6 +292,7 @@ Pass `--open` to launch them all straight away:
 ```bash
 rel sync --auto --open
 rel release --open
+rel merge --auto --open
 ```
 
 Without the flag, `rel` asks once whether to open them, defaulting to no. Piped and CI runs are never prompted.

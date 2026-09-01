@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -132,6 +133,55 @@ func TestRenderMergePlanAlignsTheBranchColumn(t *testing.T) {
 	}
 	if columns[0] != columns[1] {
 		t.Errorf("branch column is not aligned (%v):\n%s", columns, out)
+	}
+}
+
+// The row numbers are how the reader counts the services at a glance, so they
+// have to run 1..N and stay aligned when the count reaches two digits.
+func TestRenderMergePlanNumbersItsRows(t *testing.T) {
+	var items []mergeResult
+	for i := 1; i <= 11; i++ {
+		items = append(items, readyResult(fmt.Sprintf("payment-%02d", i), i, "release/1.0.0", "clean"))
+	}
+
+	out := renderMergePlan(items, nil, releasePlanProfile(), "squash")
+
+	for i, want := range []string{" 1. payment-01", " 9. payment-09", "10. payment-10", "11. payment-11"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("row %d is missing %q:\n%s", i, want, out)
+		}
+	}
+	if strings.Contains(out, "12. ") {
+		t.Errorf("numbering ran past the last row:\n%s", out)
+	}
+}
+
+func TestRenderMergePlanNumbersEachGroupOfItsOwn(t *testing.T) {
+	excluded := []mergeResult{
+		{repo: "payment-delta", status: mergeBlocked, pr: relgithub.ReleasePR{
+			Number: 77, Head: "release/2.5.0", MergeableState: "blocked",
+			URL: "https://github.com/acme/payment-delta/pull/77",
+		}},
+		{repo: "payment-eps", status: mergeConflict, pr: relgithub.ReleasePR{
+			Number: 8, Head: "release/1.1.0", MergeableState: "dirty",
+			URL: "https://github.com/acme/payment-eps/pull/8",
+		}},
+	}
+
+	out := renderMergePlan(nil, excluded, releasePlanProfile(), "squash")
+
+	if !strings.Contains(out, "1. payment-delta") || !strings.Contains(out, "1. payment-eps") {
+		t.Errorf("every group must count from one:\n%s", out)
+	}
+
+	// The follow-up link hangs under the repository name, not under the number.
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "└") {
+			continue
+		}
+		if idx := strings.Index(line, "└"); idx < len("         1. ") {
+			t.Errorf("detail line is not indented past the number: %q", line)
+		}
 	}
 }
 

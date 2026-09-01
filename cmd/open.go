@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/gozeloglu/rel/pkg/browser"
 	"github.com/gozeloglu/rel/pkg/tui"
@@ -12,8 +13,8 @@ import (
 // openPRs is set by the shared --open flag.
 var openPRs bool
 
-// createdPR pairs a repository with the pull request that was opened for it.
-type createdPR struct {
+// prLink pairs a repository with one of its pull requests.
+type prLink struct {
 	Repo string
 	URL  string
 }
@@ -21,7 +22,7 @@ type createdPR struct {
 // addOpenFlag registers the shared --open flag on a command.
 func addOpenFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&openPRs, "open", false,
-		"Open the created pull requests in your browser without asking")
+		"Open the resulting pull requests in your browser without asking")
 }
 
 // isInteractive reports whether both ends of the terminal are attached, which
@@ -41,25 +42,31 @@ func isCharDevice(f *os.File) bool {
 
 // reportCreatedPRs prints every pull request that was opened, then offers to
 // launch them in a browser.
-func reportCreatedPRs(created []createdPR) {
-	if len(created) == 0 {
+func reportCreatedPRs(created []prLink) {
+	reportPRs(fmt.Sprintf("Created %d %s",
+		len(created), plural(len(created), "pull request", "pull requests")), created)
+}
+
+// reportPRs prints a numbered list of pull requests under a title, then offers
+// to launch them in a browser.
+func reportPRs(title string, prs []prLink) {
+	if len(prs) == 0 {
 		return
 	}
 
-	fmt.Printf("\n%s\n", sectionTitle(fmt.Sprintf("Created %d %s",
-		len(created), plural(len(created), "pull request", "pull requests"))))
+	fmt.Printf("\n%s\n", sectionTitle(title))
 
-	width := 0
-	for _, pr := range created {
+	width, index := 0, len(strconv.Itoa(len(prs)))
+	for _, pr := range prs {
 		if n := len(pr.Repo); n > width {
 			width = n
 		}
 	}
-	for _, pr := range created {
-		fmt.Printf("   %-*s  %s\n", width, pr.Repo, pr.URL)
+	for i, pr := range prs {
+		fmt.Printf("   %*d. %-*s  %s\n", index, i+1, width, pr.Repo, pr.URL)
 	}
 
-	maybeOpenPRs(created)
+	maybeOpenPRs(prs)
 }
 
 // Injection points so the open decision can be tested without a real browser.
@@ -71,7 +78,7 @@ var (
 
 // maybeOpenPRs applies the --open flag, falling back to a prompt when the
 // command is running in a real terminal.
-func maybeOpenPRs(created []createdPR) {
+func maybeOpenPRs(created []prLink) {
 	if len(created) == 0 {
 		return
 	}

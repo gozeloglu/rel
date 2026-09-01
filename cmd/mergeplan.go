@@ -242,8 +242,9 @@ func renderMergePlan(items, excluded []mergeResult, profile *config.Profile, met
 	return sb.String()
 }
 
-// renderMergeRows builds an aligned table. Padding is applied to plain text
-// before styling, because ANSI escapes would corrupt the widths.
+// renderMergeRows builds an aligned table. Rows are numbered so the size of a
+// list can be read off its last line. Padding is applied to plain text before
+// styling, because ANSI escapes would corrupt the widths.
 func renderMergeRows(results []mergeResult, baseBranch, indent string) string {
 	var wRepo, wPR, wHead int
 	for _, r := range results {
@@ -251,10 +252,12 @@ func renderMergeRows(results []mergeResult, baseBranch, indent string) string {
 		wPR = max(wPR, len([]rune(r.prLabel())))
 		wHead = max(wHead, len([]rune(r.headLabel())))
 	}
+	wIndex := len(strconv.Itoa(len(results)))
 
 	var sb strings.Builder
-	for _, r := range results {
+	for i, r := range results {
 		sb.WriteString(indent)
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("%*d. ", wIndex, i+1)))
 		sb.WriteString(repoStyle.Render(pad(r.repo, wRepo)))
 		sb.WriteString("  ")
 		sb.WriteString(dimStyle.Render(pad(r.prLabel(), wPR)))
@@ -270,8 +273,9 @@ func renderMergeRows(results []mergeResult, baseBranch, indent string) string {
 		}
 		sb.WriteString("\n")
 
+		// Follow-up lines hang under the repository name, past the number.
 		for _, line := range r.details() {
-			sb.WriteString(indent + "  " + dimStyle.Render("└ "+line) + "\n")
+			sb.WriteString(indent + strings.Repeat(" ", wIndex+2) + dimStyle.Render("└ "+line) + "\n")
 		}
 	}
 	return sb.String()
