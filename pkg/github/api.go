@@ -10,11 +10,21 @@ import (
 
 	"github.com/google/go-github/v60/github"
 	"github.com/gozeloglu/rel/pkg/config"
+	"github.com/gozeloglu/rel/pkg/utils"
 )
 
 // ErrSyncPRExists reports that the sync pull request the caller asked for is
 // already open, so nothing was created.
 var ErrSyncPRExists = errors.New("sync pull request already exists")
+
+// ErrMergeNotAllowed reports that GitHub refused the merge itself, which is
+// what branch protection or a merge method disabled on the repository looks
+// like from here.
+var ErrMergeNotAllowed = errors.New("merge not allowed")
+
+// ErrHeadChanged reports that the pull request moved after it was reviewed, so
+// GitHub declined to merge something the user has not seen.
+var ErrHeadChanged = errors.New("pull request head changed since it was reviewed")
 
 // FetchRepos lists the repositories the profile targets, applying its include
 // and exclude filters. When a team is configured it is used first; if the team
@@ -320,15 +330,140 @@ func (c *Client) CreateSyncPR(ctx context.Context, repo string) (string, error) 
 	return pr.GetHTMLURL(), nil
 }
 
+// ReleasePR is an open pull request that the release flow cut.
+type ReleasePR struct {
+	Number int
+	Head   string
+	URL    string
+	Draft  bool
+	// Mergeable is nil while GitHub is still computing the merge state, and is
+	// always nil on entries that come from the list endpoint.
+	Mergeable *bool
+	// MergeableState is GitHub's own verdict: "clean", "unstable", "blocked",
+	// "behind", "dirty", "draft" or "unknown".
+	MergeableState string
+}
+
+// FindOpenReleasePRs returns every open release pull request of a repository.
+// The list endpoint never reports mergeability, so the entries only carry the
+// identity of each pull request.
+func (c *Client) FindOpenReleasePRs(ctx context.Context, repo string) ([]ReleasePR, error) {
+	opts := &github.PullRequestListOptions{
+		State:       "open",
+		Base:        c.Profile.BaseBranch,
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	var out []ReleasePR
+	for {
+		prs, resp, err := c.GH.PullRequests.List(ctx, c.owner(), repo, opts)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, pr := range prs {
+			head := pr.GetHead().GetRef()
+			if !strings.HasPrefix(head, utils.ReleaseBranchPrefix) {
+				continue
+			}
+			out = append(out, ReleasePR{
+				Number: pr.GetNumber(),
+				Head:   head,
+				URL:    pr.GetHTMLURL(),
+				Draft:  pr.GetDraft(),
+			})
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return out, nil
+}
+
+// mergeabilityRetryDelay is how long to wait before asking a second time. It is
+// a variable so tests do not have to sleep.
+var mergeabilityRetryDelay = 2 * time.Second
+
+// PullRequestMergeability resolves the merge state of a single pull request.
+// GitHub computes it asynchronously and answers "unknown" while it works, so an
+// undecided first answer is retried once.
+func (c *Client) PullRequestMergeability(ctx context.Context, repo string, number int) (ReleasePR, error) {
+	for attempt := 0; ; attempt++ {
+		pr, _, err := c.GH.PullRequests.Get(ctx, c.owner(), repo, number)
+		if err != nil {
+			return ReleasePR{}, err
+		}
+
+		out := ReleasePR{
+			Number:         pr.GetNumber(),
+			Head:           pr.GetHead().GetRef(),
+			URL:            pr.GetHTMLURL(),
+			Draft:          pr.GetDraft(),
+			Mergeable:      pr.Mergeable,
+			MergeableState: pr.GetMergeableState(),
+		}
+
+		if pr.Mergeable != nil || attempt > 0 {
+			return out, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return out, ctx.Err()
+		case <-time.After(mergeabilityRetryDelay):
+		}
+	}
+}
+
+// MergePR merges a pull request with the given method ("squash", "merge" or
+// "rebase") and returns the resulting commit SHA.
+func (c *Client) MergePR(ctx context.Context, repo string, number int, method string) (string, error) {
+	res, _, err := c.GH.PullRequests.Merge(ctx, c.owner(), repo, number, "",
+		&github.PullRequestOptions{MergeMethod: method})
+	if err != nil {
+		switch statusOf(err) {
+		case http.StatusMethodNotAllowed:
+			return "", fmt.Errorf("%w: %s", ErrMergeNotAllowed, messageOf(err))
+		case http.StatusConflict:
+			return "", ErrHeadChanged
+		}
+		return "", err
+	}
+
+	if !res.GetMerged() {
+		return "", fmt.Errorf("%w: %s", ErrMergeNotAllowed, res.GetMessage())
+	}
+	return res.GetSHA(), nil
+}
+
 // IsNotFound reports whether an API call failed with 404. Auto-sync uses it to
 // tell "this repository does not follow the base/dev model" apart from a real
 // failure, since comparing against a branch that does not exist returns 404.
 func IsNotFound(err error) bool {
+	return statusOf(err) == http.StatusNotFound
+}
+
+// statusOf returns the HTTP status behind an API error, or 0 when the failure
+// did not come from GitHub.
+func statusOf(err error) int {
 	var errResp *github.ErrorResponse
-	if !errors.As(err, &errResp) {
-		return false
+	if !errors.As(err, &errResp) || errResp.Response == nil {
+		return 0
 	}
-	return errResp.Response != nil && errResp.Response.StatusCode == http.StatusNotFound
+	return errResp.Response.StatusCode
+}
+
+// messageOf returns the human readable part of an API error, which explains a
+// refused merge far better than its status code does.
+func messageOf(err error) string {
+	var errResp *github.ErrorResponse
+	if !errors.As(err, &errResp) || errResp.Message == "" {
+		return err.Error()
+	}
+	return errResp.Message
 }
 
 // isAlreadyExistsErr detects GitHub's 422 response for a pull request that

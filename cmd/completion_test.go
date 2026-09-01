@@ -185,7 +185,7 @@ func TestCompleteProfileFlag(t *testing.T) {
 	completionHome(t)
 	writeProfiles(t)
 
-	for _, name := range []string{"release", "sync"} {
+	for _, name := range []string{"release", "sync", "merge"} {
 		candidates, directive := runComplete(t, name, "--profile", "")
 
 		got := values(candidates)
@@ -206,6 +206,7 @@ func TestArglessCommandsDoNotCompleteFiles(t *testing.T) {
 		{"init", ""},
 		{"release", ""},
 		{"sync", ""},
+		{"merge", ""},
 		{"profile", "list", ""},
 		{"cache", "status", ""},
 		{"cache", "clear", ""},
@@ -230,6 +231,21 @@ func TestCompletionShellFlagCandidates(t *testing.T) {
 
 	got := values(candidates)
 	want := []string{"bash", "zsh", "fish", "powershell"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if directive != ":4" {
+		t.Fatalf("expected :4, got %q", directive)
+	}
+}
+
+func TestCompleteMergeMethodCandidates(t *testing.T) {
+	completionHome(t)
+
+	candidates, directive := runComplete(t, "merge", "--method", "")
+
+	got := values(candidates)
+	want := []string{"squash", "merge", "rebase"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v, want %v", got, want)
 	}

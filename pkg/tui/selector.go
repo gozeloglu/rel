@@ -411,19 +411,32 @@ type RepoNote struct {
 // checked, so the user only has to uncheck what they want to leave out.
 func ConfirmRepos(title string, items []RepoNote) ([]string, error) {
 	repos := make([]string, 0, len(items))
+	for _, it := range items {
+		repos = append(repos, it.Repo)
+	}
+	return ConfirmReposWithPreset(title, items, repos)
+}
+
+// ConfirmReposWithPreset shows the annotated multi-select screen with preset
+// ticked. A review loop passes the previous answer back in so going round again
+// does not undo what the user already unchecked.
+func ConfirmReposWithPreset(title string, items []RepoNote, preset []string) ([]string, error) {
+	return runSelector(newAnnotatedSelectorModel(title, items, preset))
+}
+
+// newAnnotatedSelectorModel builds a selector whose rows carry an annotation.
+func newAnnotatedSelectorModel(title string, items []RepoNote, preset []string) *selectorModel {
+	repos := make([]string, 0, len(items))
 	notes := make(map[string]string, len(items))
 	for _, it := range items {
 		repos = append(repos, it.Repo)
 		notes[it.Repo] = it.Note
 	}
 
-	m := newSelectorModel(title, repos)
+	m := newPresetSelectorModel(title, repos, preset)
 	m.notes = notes
-	for _, r := range repos {
-		m.selected[r] = true
-	}
 
-	return runSelector(m)
+	return m
 }
 
 func runSelector(m *selectorModel) ([]string, error) {

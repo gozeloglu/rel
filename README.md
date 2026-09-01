@@ -13,6 +13,7 @@ It helps you quickly select repositories, bump versions, check branch synchroniz
 
 - **`rel init`**: One-time setup wizard. Asks for your organization (or username), an optional team, repository filters, and detects your branch names from a real repository.
 - **`rel release`**: Interactive release workflow. Fetches repositories, calculates the next minor version, validates that the release branch is not ahead of the development branch, creates a `release/x.y.z` branch, opens a PR, and writes a markdown file with release notes.
+- **`rel merge`**: Lands the release pull requests in one pass instead of clicking through GitHub repository by repository. Pick the services yourself, or let `--auto` find every open `release/*` pull request. Squash by default.
 - **`rel sync`**: Post-release utility. Checks whether the release branch is ahead of the development branch and opens sync PRs to keep them up to date. `--auto` detects recently released repositories for you, so bulk deploys don't need hand-picking.
 - **`rel profile`**: Switch between multiple setups (for example your company team and your personal account) without editing any files.
 - **Repository cache**: The repository list is cached locally for 30 minutes, per profile, so repeated runs don't re-fetch it from GitHub every time.
@@ -139,6 +140,62 @@ Key bindings in the repository list:
 | `esc` | Stop typing the filter; press again to clear the filter and return to the full list |
 | `enter` | Apply the filter while typing, otherwise confirm the selection |
 | `ctrl+c` / `q` | Quit |
+
+### Merge Release Pull Requests
+
+When the deploy window opens, every release pull request has to be merged. Doing that in the GitHub UI is two clicks per repository:
+
+```bash
+rel merge                    # pick the services yourself
+rel merge --auto             # find every open release/* pull request
+rel merge --method merge     # merge commit instead of a squash
+rel merge --auto --dry-run   # report only, never merges anything
+rel merge --auto --yes       # skip the confirmation screen
+```
+
+Both modes end on the same review screen, and nothing is merged before you approve it:
+
+```
+Merge plan · acme/payments · → master · method squash
+────────────────────────────────────────────────────────────────────────
+
+   payment-alpha         #91  release/1.3.0
+   payment-beta          #44  release/4.0.0
+   payment-core-service  #12  release/2.4.1  ⚠ checks failing
+
+   ⚠  3 repositories excluded
+
+      ⏭  BLOCKED · checks or reviews · 1
+         payment-delta  #77  release/2.5.0  checks or reviews pending
+           └ https://github.com/acme/payment-delta/pull/77
+
+      ✖  CONFLICT · 1
+         payment-epsilon  #8  release/1.1.0  conflicts with master
+           └ https://github.com/acme/payment-epsilon/pull/8
+
+      ⚠  MORE THAN ONE OPEN RELEASE PR · 1
+         payment-gamma  #31  release/5.1.0  2 open release PRs
+           └ https://github.com/acme/payment-gamma/pull/31
+           └ https://github.com/acme/payment-gamma/pull/32
+
+   each pull request is merged into master with squash
+
+Merge 3 pull requests with squash? (Y/n)
+```
+
+Answering no takes you back to the selection instead of quitting, with your previous answer still ticked, and nothing is looked up again — so adding or removing a service costs nothing.
+
+A pull request only reaches the merge list when GitHub says it can be merged right now. Everything else is listed with its reason and a link, so it is obvious what still needs a human: a red required check, a conflict, a draft, or a repository that somehow has two open release branches. Failing checks that are not required do not block the merge; they are flagged with `⚠` and flip the confirmation default to no.
+
+The merge method applies to the whole run and is shown in the plan header:
+
+| `--method` | Result |
+| --- | --- |
+| `squash` (default) | One commit per pull request |
+| `merge` | A merge commit |
+| `rebase` | The commits are replayed onto the base branch |
+
+`--yes` and `--dry-run` only apply together with `--auto`. When the merges are done, `rel` points you at `rel sync --auto`, which is what cleans up the base branch afterwards.
 
 ### Sync Branches
 
@@ -272,6 +329,7 @@ The repository list is cached per profile for 30 minutes and is invalidated auto
 ```bash
 rel release --refresh   # bypass the cache and re-fetch
 rel sync --refresh      # same for sync
+rel merge --refresh     # same for merge
 rel cache status        # show cache age and repo count for the active profile
 rel cache clear         # delete the cached list of the active profile
 rel cache clear --all   # delete every cached list
@@ -306,7 +364,8 @@ Restart your shell afterwards. What gets completed:
 | --- | --- |
 | `rel profile use <TAB>` | profile names, with the active one marked and a summary of each |
 | `rel profile delete <TAB>` | the same list |
-| `rel release --profile <TAB>` | the same list (also for `rel sync`) |
+| `rel release --profile <TAB>` | the same list (also for `rel sync` and `rel merge`) |
+| `rel merge --method <TAB>` | `squash`, `merge`, `rebase` |
 | `rel <TAB>` | subcommands and their descriptions |
 | `rel release <TAB>` | flags only — no stray file name suggestions |
 

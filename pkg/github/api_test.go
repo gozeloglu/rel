@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -353,5 +354,214 @@ func TestCheckSyncStatusSkipsSingleBranchProfiles(t *testing.T) {
 	}
 	if got {
 		t.Error("CheckSyncStatus = true, want false for a single-branch profile")
+	}
+}
+
+func TestFindOpenReleasePRsKeepsOnlyReleaseBranches(t *testing.T) {
+	var gotQuery url.Values
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/svc/pulls", func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte(`[
+			{"number":91,"html_url":"https://github.com/acme/svc/pull/91","head":{"ref":"release/1.3.0"}},
+			{"number":90,"html_url":"https://github.com/acme/svc/pull/90","head":{"ref":"feature/login"}},
+			{"number":89,"html_url":"https://github.com/acme/svc/pull/89","head":{"ref":"releases/old"}},
+			{"number":88,"html_url":"https://github.com/acme/svc/pull/88","head":{"ref":"release/1.4.0"},"draft":true}
+		]`))
+	})
+
+	client := newTestClient(t, mux)
+
+	prs, err := client.FindOpenReleasePRs(context.Background(), "svc")
+	if err != nil {
+		t.Fatalf("FindOpenReleasePRs: %v", err)
+	}
+
+	if len(prs) != 2 {
+		t.Fatalf("got %d pull requests, want the two release branches: %+v", len(prs), prs)
+	}
+	if prs[0].Number != 91 || prs[0].Head != "release/1.3.0" {
+		t.Errorf("first pull request = %+v, want #91 release/1.3.0", prs[0])
+	}
+	if !prs[1].Draft {
+		t.Error("draft flag was dropped")
+	}
+	if got := gotQuery.Get("state"); got != "open" {
+		t.Errorf("state = %q, want open", got)
+	}
+	if got := gotQuery.Get("base"); got != "master" {
+		t.Errorf("base = %q, want the profile base branch", got)
+	}
+}
+
+func TestFindOpenReleasePRsFollowsPagination(t *testing.T) {
+	var server *httptest.Server
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/svc/pulls", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			_, _ = w.Write([]byte(`[{"number":2,"head":{"ref":"release/2.0.0"}}]`))
+			return
+		}
+		w.Header().Set("Link", `<`+server.URL+`/repos/acme/svc/pulls?page=2>; rel="next"`)
+		_, _ = w.Write([]byte(`[{"number":1,"head":{"ref":"release/1.0.0"}}]`))
+	})
+
+	server = httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	base, err := url.Parse(server.URL + "/")
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	ghClient := gh.NewClient(nil)
+	ghClient.BaseURL = base
+	client := &Client{GH: ghClient, Profile: testProfile()}
+
+	prs, err := client.FindOpenReleasePRs(context.Background(), "svc")
+	if err != nil {
+		t.Fatalf("FindOpenReleasePRs: %v", err)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("got %d pull requests, want both pages: %+v", len(prs), prs)
+	}
+}
+
+func TestPullRequestMergeabilityRetriesWhileUndecided(t *testing.T) {
+	calls := 0
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/svc/pulls/91", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			_, _ = w.Write([]byte(`{"number":91,"mergeable_state":"unknown"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"number":91,"mergeable":true,"mergeable_state":"clean","head":{"ref":"release/1.3.0"}}`))
+	})
+
+	client := newTestClient(t, mux)
+
+	restore := mergeabilityRetryDelay
+	mergeabilityRetryDelay = time.Millisecond
+	t.Cleanup(func() { mergeabilityRetryDelay = restore })
+
+	pr, err := client.PullRequestMergeability(context.Background(), "svc", 91)
+	if err != nil {
+		t.Fatalf("PullRequestMergeability: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("asked GitHub %d times, want a single retry after 'unknown'", calls)
+	}
+	if pr.MergeableState != "clean" || pr.Head != "release/1.3.0" {
+		t.Errorf("pr = %+v, want the second, decided answer", pr)
+	}
+}
+
+func TestPullRequestMergeabilityStopsAfterOneRetry(t *testing.T) {
+	calls := 0
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/svc/pulls/91", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`{"number":91,"mergeable_state":"unknown"}`))
+	})
+
+	client := newTestClient(t, mux)
+
+	restore := mergeabilityRetryDelay
+	mergeabilityRetryDelay = time.Millisecond
+	t.Cleanup(func() { mergeabilityRetryDelay = restore })
+
+	pr, err := client.PullRequestMergeability(context.Background(), "svc", 91)
+	if err != nil {
+		t.Fatalf("PullRequestMergeability: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("asked GitHub %d times, want it to give up after one retry", calls)
+	}
+	if pr.MergeableState != "unknown" {
+		t.Errorf("state = %q, want the undecided answer to be reported as is", pr.MergeableState)
+	}
+}
+
+func TestMergePRSendsTheRequestedMethod(t *testing.T) {
+	var gotBody, gotMethod string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/svc/pulls/91/merge", func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		_, _ = w.Write([]byte(`{"merged":true,"sha":"abc123"}`))
+	})
+
+	client := newTestClient(t, mux)
+
+	sha, err := client.MergePR(context.Background(), "svc", 91, "squash")
+	if err != nil {
+		t.Fatalf("MergePR: %v", err)
+	}
+	if sha != "abc123" {
+		t.Errorf("sha = %q, want abc123", sha)
+	}
+	if gotMethod != http.MethodPut {
+		t.Errorf("HTTP method = %q, want PUT", gotMethod)
+	}
+	if !strings.Contains(gotBody, `"merge_method":"squash"`) {
+		t.Errorf("body = %s, want the squash method", gotBody)
+	}
+}
+
+func TestMergePRClassifiesRefusals(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   error
+	}{
+		{
+			name:   "merge method disabled",
+			status: http.StatusMethodNotAllowed,
+			body:   `{"message":"Squash merges are not allowed on this repository."}`,
+			want:   ErrMergeNotAllowed,
+		},
+		{
+			name:   "head moved",
+			status: http.StatusConflict,
+			body:   `{"message":"Head branch was modified. Review and try the merge again."}`,
+			want:   ErrHeadChanged,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/repos/acme/svc/pulls/91/merge", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			})
+
+			client := newTestClient(t, mux)
+
+			_, err := client.MergePR(context.Background(), "svc", 91, "squash")
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestMergePRReportsARefusedButSuccessfulResponse(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/svc/pulls/91/merge", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"merged":false,"message":"Pull Request is not mergeable"}`))
+	})
+
+	client := newTestClient(t, mux)
+
+	if _, err := client.MergePR(context.Background(), "svc", 91, "merge"); !errors.Is(err, ErrMergeNotAllowed) {
+		t.Fatalf("err = %v, want ErrMergeNotAllowed when GitHub answers merged:false", err)
 	}
 }

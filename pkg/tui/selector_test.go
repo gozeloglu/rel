@@ -197,22 +197,14 @@ func TestSpaceIsNotDuplicatedInFilter(t *testing.T) {
 	}
 }
 
-// newConfirmTestModel mirrors what ConfirmRepos builds, without running a
+// newConfirmTestModel builds what ConfirmRepos builds, without running a
 // bubbletea program.
 func newConfirmTestModel(items []RepoNote) *selectorModel {
 	repos := make([]string, 0, len(items))
-	notes := make(map[string]string, len(items))
 	for _, it := range items {
 		repos = append(repos, it.Repo)
-		notes[it.Repo] = it.Note
 	}
-
-	m := newSelectorModel("Confirm", repos)
-	m.notes = notes
-	for _, r := range repos {
-		m.selected[r] = true
-	}
-	return m
+	return newAnnotatedSelectorModel("Confirm", items, repos)
 }
 
 func TestConfirmModelPreselectsEverything(t *testing.T) {
@@ -254,6 +246,28 @@ func TestConfirmModelAllowsUnchecking(t *testing.T) {
 	got := m.result()
 	if len(got) != 1 || got[0] != "payment-beta" {
 		t.Errorf("result = %v, want [payment-beta]", got)
+	}
+}
+
+// A review loop that goes back must not resurrect the rows the user unchecked.
+func TestConfirmReposWithPresetKeepsThePreviousAnswer(t *testing.T) {
+	items := []RepoNote{
+		{Repo: "payment-alpha", Note: "#91  release/1.3.0"},
+		{Repo: "payment-beta", Note: "#44  release/4.0.0"},
+	}
+
+	m := newAnnotatedSelectorModel("Confirm", items, []string{"payment-beta"})
+
+	got := m.result()
+	if len(got) != 1 || got[0] != "payment-beta" {
+		t.Fatalf("result = %v, want only the preset entry", got)
+	}
+
+	view := m.View()
+	for _, want := range []string{"[ ] payment-alpha", "[✓] payment-beta", "#44  release/4.0.0"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view is missing %q:\n%s", want, view)
+		}
 	}
 }
 
