@@ -5,6 +5,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    reviewers:
+      - "gozeloglu"
     commit-message:
       prefix: "chore"
 
@@ -12,5 +14,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    reviewers:
+      - "gozeloglu"
     commit-message:
       prefix: "ci"

@@ -1,3 +1,4 @@
 rel
 release-notes-*.md
 dist/
+.DS_Store
